@@ -15,9 +15,15 @@ class AuthService {
   }
 
   static void navigateToAuthRoot(BuildContext context) {
-    final navigator = Navigator.of(context, rootNavigator: true);
-    if (!navigator.mounted) return;
-    navigator.popUntil((route) => route.isFirst);
+    final navigator = Navigator.maybeOf(context);
+    if (navigator == null || !navigator.mounted || !navigator.canPop()) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!navigator.mounted) return;
+      navigator.popUntil((route) => route.isFirst);
+    });
   }
 
   static String errorMessage(FirebaseAuthException exception) {
