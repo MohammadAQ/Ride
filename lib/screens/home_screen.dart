@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../services/auth_service.dart';
+
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   Future<void> _logout(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
     try {
       await FirebaseAuth.instance.signOut();
-      ScaffoldMessenger.of(context).showSnackBar(
+      await AuthService.navigateToAuthRoot(context);
+      if (!messenger.mounted) return;
+      messenger.showSnackBar(
         const SnackBar(content: Text('Logged out successfully')),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      if (!messenger.mounted) return;
+      messenger.showSnackBar(
         SnackBar(content: Text('Error logging out: $e')),
       );
     }
