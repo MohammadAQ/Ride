@@ -20,6 +20,11 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
+ codex/refactor-password_screen-for-auth-flow-lzqw1d
+    if (_isLoading) return;
+
+=======
+ main
     if (!mounted) return;
     setState(() => _isLoading = true);
 
@@ -31,7 +36,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       } else {
         // إنشاء مستخدم جديد
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        await AuthService.signUp(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );

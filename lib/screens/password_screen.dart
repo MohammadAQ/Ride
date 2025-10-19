@@ -26,6 +26,8 @@ class _PasswordScreenState extends State<PasswordScreen> {
       return;
     }
 
+    if (_isLoading) return;
+
     try {
       if (!mounted) return;
       setState(() => _isLoading = true);

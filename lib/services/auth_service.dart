@@ -8,8 +8,45 @@ class AuthService {
   static Future<UserCredential> signIn({
     required String email,
     required String password,
+ codex/refactor-password_screen-for-auth-flow-lzqw1d
+    int maxRetries = 1,
+  }) async {
+    FirebaseAuthException? lastException;
+
+    for (var attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+      } on FirebaseAuthException catch (e) {
+        lastException = e;
+        if (e.code != 'network-request-failed' || attempt == maxRetries) {
+          rethrow;
+        }
+
+        // Give Firebase a brief moment to recover from transient connectivity
+        // hiccups such as flaky mobile data or captive portals before retrying.
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+    }
+
+    throw lastException ??
+        FirebaseAuthException(
+          code: 'network-request-failed',
+          message: 'Network error. Check your connection and try again.',
+        );
+  }
+
+  static Future<UserCredential> signUp({
+    required String email,
+    required String password,
+  }) {
+    return FirebaseAuth.instance.createUserWithEmailAndPassword(
+
   }) {
     return FirebaseAuth.instance.signInWithEmailAndPassword(
+ main
       email: email,
       password: password,
     );
