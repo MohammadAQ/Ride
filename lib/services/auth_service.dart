@@ -8,7 +8,6 @@ class AuthService {
   static Future<UserCredential> signIn({
     required String email,
     required String password,
- codex/refactor-password_screen-for-auth-flow-lzqw1d
     int maxRetries = 1,
   }) async {
     FirebaseAuthException? lastException;
@@ -43,16 +42,21 @@ class AuthService {
     required String password,
   }) {
     return FirebaseAuth.instance.createUserWithEmailAndPassword(
-
-  }) {
-    return FirebaseAuth.instance.signInWithEmailAndPassword(
- main
       email: email,
       password: password,
     );
   }
 
   static Future<void> handleSuccessfulSignIn(BuildContext context) async {
+    await _redirectToRoot(context);
+  }
+
+  @Deprecated('Use handleSuccessfulSignIn instead')
+  static Future<void> navigateToAuthRoot(BuildContext context) async {
+    await _redirectToRoot(context);
+  }
+
+  static Future<void> _redirectToRoot(BuildContext context) async {
     final navigator = _navigatorFor(context);
     if (navigator == null || !navigator.mounted) {
       return;
@@ -60,16 +64,12 @@ class AuthService {
 
     // Defer navigation changes to the next microtask so current UI work can
     // settle before we manipulate the stack. This avoids lifecycle exceptions
-    // that can occur if we pop synchronously while widgets are still building.
+    // that can occur if we navigate synchronously while widgets are still
+    // building.
     await Future<void>.delayed(Duration.zero);
 
     if (!navigator.mounted) return;
-    navigator.popUntil((route) => route.isFirst);
-  }
-
-  @Deprecated('Use handleSuccessfulSignIn instead')
-  static Future<void> navigateToAuthRoot(BuildContext context) {
-    return handleSuccessfulSignIn(context);
+    navigator.pushNamedAndRemoveUntil('/', (route) => false);
   }
 
   static NavigatorState? _navigatorFor(BuildContext context) {
