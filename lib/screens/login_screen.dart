@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:carpal_app/screens/home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -36,11 +35,9 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
 
-      // بعد النجاح → الذهاب إلى الصفحة الرئيسية
+      // بعد النجاح → العودة إلى الجذر للسماح لـ AuthWrapper بإعادة التوجيه
       if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
-        );
+        Navigator.of(context).popUntil((route) => route.isFirst);
       }
     } on FirebaseAuthException catch (e) {
       String message = 'Authentication failed';

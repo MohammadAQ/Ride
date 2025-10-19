@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:carpal_app/screens/auth_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -22,10 +21,9 @@ class ProfileScreen extends StatelessWidget {
             ElevatedButton(
               onPressed: () async {
                 await FirebaseAuth.instance.signOut();
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const AuthScreen()),
-                  (route) => false,
-                );
+                final navigator = Navigator.of(context);
+                if (!navigator.mounted) return;
+                navigator.popUntil((route) => route.isFirst);
               },
               child: const Text('Logout'),
             ),
