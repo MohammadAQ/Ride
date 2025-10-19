@@ -25,6 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       if (_isLogin) {
+        // تسجيل الدخول
         await AuthService.signIn(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
@@ -45,14 +46,6 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(AuthService.errorMessage(e)),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Unexpected error. Please try again.'),
           backgroundColor: Colors.redAccent,
         ),
       );
