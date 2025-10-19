@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../services/auth_service.dart';
+
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
@@ -21,9 +23,7 @@ class ProfileScreen extends StatelessWidget {
             ElevatedButton(
               onPressed: () async {
                 await FirebaseAuth.instance.signOut();
-                final navigator = Navigator.of(context);
-                if (!navigator.mounted) return;
-                navigator.popUntil((route) => route.isFirst);
+                await AuthService.navigateToAuthRoot(context);
               },
               child: const Text('Logout'),
             ),

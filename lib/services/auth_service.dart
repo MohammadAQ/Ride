@@ -8,26 +8,50 @@ class AuthService {
   static Future<UserCredential> signIn({
     required String email,
     required String password,
- codex/refactor-password_screen-for-auth-flow-lzqw1d
-    int maxRetries = 1,
+    int maxRetries = 3,
+  }) async {
+    return _runWithNetworkRetries(
+      maxRetries: maxRetries,
+      operation: () => FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      ),
+    );
+  }
+
+  static Future<UserCredential> signUp({
+    required String email,
+    required String password,
+    int maxRetries = 3,
+  }) async {
+    return _runWithNetworkRetries(
+      maxRetries: maxRetries,
+      operation: () => FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      ),
+    );
+  }
+
+  static Future<T> _runWithNetworkRetries<T>({
+    required int maxRetries,
+    required Future<T> Function() operation,
   }) async {
     FirebaseAuthException? lastException;
 
     for (var attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        return await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: email,
-          password: password,
-        );
+        return await operation();
       } on FirebaseAuthException catch (e) {
         lastException = e;
-        if (e.code != 'network-request-failed' || attempt == maxRetries) {
+        final isNetworkError = e.code == 'network-request-failed';
+        if (!isNetworkError || attempt == maxRetries) {
           rethrow;
         }
 
-        // Give Firebase a brief moment to recover from transient connectivity
-        // hiccups such as flaky mobile data or captive portals before retrying.
-        await Future<void>.delayed(const Duration(milliseconds: 400));
+        final backoffMilliseconds = 400 * (attempt + 1);
+        final delay = backoffMilliseconds.clamp(400, 2000).toInt();
+        await Future<void>.delayed(Duration(milliseconds: delay));
       }
     }
 
@@ -38,21 +62,16 @@ class AuthService {
         );
   }
 
-  static Future<UserCredential> signUp({
-    required String email,
-    required String password,
-  }) {
-    return FirebaseAuth.instance.createUserWithEmailAndPassword(
-
-  }) {
-    return FirebaseAuth.instance.signInWithEmailAndPassword(
- main
-      email: email,
-      password: password,
-    );
+  static Future<void> handleSuccessfulSignIn(BuildContext context) async {
+    await _redirectToRoot(context);
   }
 
-  static Future<void> handleSuccessfulSignIn(BuildContext context) async {
+  @Deprecated('Use handleSuccessfulSignIn instead')
+  static Future<void> navigateToAuthRoot(BuildContext context) async {
+    await _redirectToRoot(context);
+  }
+
+  static Future<void> _redirectToRoot(BuildContext context) async {
     final navigator = _navigatorFor(context);
     if (navigator == null || !navigator.mounted) {
       return;
@@ -60,16 +79,12 @@ class AuthService {
 
     // Defer navigation changes to the next microtask so current UI work can
     // settle before we manipulate the stack. This avoids lifecycle exceptions
-    // that can occur if we pop synchronously while widgets are still building.
+    // that can occur if we navigate synchronously while widgets are still
+    // building.
     await Future<void>.delayed(Duration.zero);
 
     if (!navigator.mounted) return;
-    navigator.popUntil((route) => route.isFirst);
-  }
-
-  @Deprecated('Use handleSuccessfulSignIn instead')
-  static Future<void> navigateToAuthRoot(BuildContext context) {
-    return handleSuccessfulSignIn(context);
+    navigator.pushNamedAndRemoveUntil('/', (route) => false);
   }
 
   static NavigatorState? _navigatorFor(BuildContext context) {
