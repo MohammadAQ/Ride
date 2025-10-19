@@ -6,7 +6,6 @@ class AuthService {
   const AuthService._();
 
   static Future<UserCredential> signIn({
-  static Future<void> signIn({
     required String email,
     required String password,
   }) {
@@ -16,21 +15,24 @@ class AuthService {
     );
   }
 
-  static void handleSuccessfulSignIn(BuildContext context) {
+  static Future<void> handleSuccessfulSignIn(BuildContext context) async {
     final navigator = _navigatorFor(context);
     if (navigator == null || !navigator.mounted) {
       return;
     }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!navigator.mounted) return;
-      navigator.popUntil((route) => route.isFirst);
-    });
+    // Defer navigation changes to the next microtask so current UI work can
+    // settle before we manipulate the stack. This avoids lifecycle exceptions
+    // that can occur if we pop synchronously while widgets are still building.
+    await Future<void>.delayed(Duration.zero);
+
+    if (!navigator.mounted) return;
+    navigator.popUntil((route) => route.isFirst);
   }
 
   @Deprecated('Use handleSuccessfulSignIn instead')
-  static void navigateToAuthRoot(BuildContext context) {
-    handleSuccessfulSignIn(context);
+  static Future<void> navigateToAuthRoot(BuildContext context) {
+    return handleSuccessfulSignIn(context);
   }
 
   static NavigatorState? _navigatorFor(BuildContext context) {
@@ -59,6 +61,8 @@ class AuthService {
       case 'invalid-credential':
       case 'user-disabled':
         return 'Invalid email or password.';
+      case 'network-request-failed':
+        return 'Network error. Check your connection and try again.';
       default:
         return exception.message ?? 'Authentication failed';
     }
