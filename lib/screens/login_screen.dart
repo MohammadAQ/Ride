@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../services/auth_service.dart';
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -18,39 +20,43 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
+    if (_isLoading) return;
+
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
     try {
       if (_isLogin) {
-        // تسجيل الدخول
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
+        await AuthService.signIn(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
       } else {
         // إنشاء مستخدم جديد
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        await AuthService.signUp(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
       }
 
       // بعد النجاح → العودة إلى الجذر للسماح لـ AuthWrapper بإعادة التوجيه
-      if (mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-      }
+      if (!mounted) return;
+      await AuthService.handleSuccessfulSignIn(context);
     } on FirebaseAuthException catch (e) {
-      String message = 'Authentication failed';
-      if (e.code == 'email-already-in-use') {
-        message = 'This email is already registered.';
-      } else if (e.code == 'user-not-found') {
-        message = 'No user found for that email.';
-      } else if (e.code == 'wrong-password') {
-        message = 'Invalid password.';
-      }
-
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
+        SnackBar(
+          content: Text(AuthService.errorMessage(e)),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Unexpected error. Please try again.'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
