@@ -8,25 +8,54 @@ class AuthService {
   static Future<UserCredential> signIn({
     required String email,
     required String password,
+ codex/review-shareride-repository-code-epjikw
+    int maxRetries = 3,
+  }) async {
+    return _runWithNetworkRetries(
+      maxRetries: maxRetries,
+      operation: () => FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      ),
+    );
+  }
+
+  static Future<UserCredential> signUp({
+    required String email,
+    required String password,
+    int maxRetries = 3,
+  }) async {
+    return _runWithNetworkRetries(
+      maxRetries: maxRetries,
+      operation: () => FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      ),
+    );
+  }
+
+  static Future<T> _runWithNetworkRetries<T>({
+    required int maxRetries,
+    required Future<T> Function() operation,
+
     int maxRetries = 1,
+ main
   }) async {
     FirebaseAuthException? lastException;
 
     for (var attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        return await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: email,
-          password: password,
-        );
+        return await operation();
       } on FirebaseAuthException catch (e) {
         lastException = e;
-        if (e.code != 'network-request-failed' || attempt == maxRetries) {
+        final isNetworkError = e.code == 'network-request-failed';
+        if (!isNetworkError || attempt == maxRetries) {
           rethrow;
         }
 
-        // Give Firebase a brief moment to recover from transient connectivity
-        // hiccups such as flaky mobile data or captive portals before retrying.
-        await Future<void>.delayed(const Duration(milliseconds: 400));
+        final backoffMilliseconds = 400 * (attempt + 1);
+        final delay = backoffMilliseconds.clamp(400, 2000).toInt();
+        await Future<void>.delayed(Duration(milliseconds: delay));
       }
     }
 
@@ -36,6 +65,17 @@ class AuthService {
           message: 'Network error. Check your connection and try again.',
         );
   }
+
+ codex/review-shareride-repository-code-epjikw
+  static Future<void> handleSuccessfulSignIn(BuildContext context) async {
+    await _redirectToRoot(context);
+  }
+
+  @Deprecated('Use handleSuccessfulSignIn instead')
+  static Future<void> navigateToAuthRoot(BuildContext context) async {
+    await _redirectToRoot(context);
+  }
+
 
   static Future<UserCredential> signUp({
     required String email,
@@ -56,6 +96,7 @@ class AuthService {
     await _redirectToRoot(context);
   }
 
+ main
   static Future<void> _redirectToRoot(BuildContext context) async {
     final navigator = _navigatorFor(context);
     if (navigator == null || !navigator.mounted) {
