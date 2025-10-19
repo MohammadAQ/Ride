@@ -25,6 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       if (_isLogin) {
+        // تسجيل الدخول
         await AuthService.signIn(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
@@ -40,6 +41,7 @@ class _LoginScreenState extends State<LoginScreen> {
       // بعد النجاح → العودة إلى الجذر للسماح لـ AuthWrapper بإعادة التوجيه
       if (!mounted) return;
       AuthService.handleSuccessfulSignIn(context);
+      AuthService.navigateToAuthRoot(context);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -6,6 +6,7 @@ class AuthService {
   const AuthService._();
 
   static Future<UserCredential> signIn({
+  static Future<void> signIn({
     required String email,
     required String password,
   }) {

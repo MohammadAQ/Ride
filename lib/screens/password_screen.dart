@@ -46,6 +46,15 @@ class _PasswordScreenState extends State<PasswordScreen> {
         const SnackBar(
           content: Text('Unexpected error. Please try again.'),
         ),
+        email: widget.email,
+        password: password,
+      );
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AuthService.errorMessage(e))),
       );
     } finally {
       if (!mounted) return;
