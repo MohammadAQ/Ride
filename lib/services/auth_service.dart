@@ -8,7 +8,6 @@ class AuthService {
   static Future<UserCredential> signIn({
     required String email,
     required String password,
- codex/refactor-password_screen-for-auth-flow-lzqw1d
     int maxRetries = 1,
   }) async {
     FirebaseAuthException? lastException;
@@ -43,10 +42,6 @@ class AuthService {
     required String password,
   }) {
     return FirebaseAuth.instance.createUserWithEmailAndPassword(
-
-  }) {
-    return FirebaseAuth.instance.signInWithEmailAndPassword(
- main
       email: email,
       password: password,
     );
