@@ -30,22 +30,15 @@ class _PasswordScreenState extends State<PasswordScreen> {
       if (!mounted) return;
       setState(() => _isLoading = true);
       await AuthService.signIn(
-        email: widget.email.trim(),
+        email: widget.email,
         password: password,
       );
       if (!mounted) return;
-      AuthService.navigateToAuthRoot(context);
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(AuthService.errorMessage(e))),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unexpected error. Please try again.'),
-        ),
       );
     } finally {
       if (!mounted) return;
