@@ -40,12 +40,21 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // بعد النجاح → العودة إلى الجذر للسماح لـ AuthWrapper بإعادة التوجيه
       if (!mounted) return;
+      AuthService.handleSuccessfulSignIn(context);
       AuthService.navigateToAuthRoot(context);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(AuthService.errorMessage(e)),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Unexpected error. Please try again.'),
           backgroundColor: Colors.redAccent,
         ),
       );
