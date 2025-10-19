@@ -39,9 +39,8 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       // بعد النجاح → العودة إلى الجذر للسماح لـ AuthWrapper بإعادة التوجيه
-      if (mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-      }
+      if (!mounted) return;
+      AuthService.navigateToAuthRoot(context);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
