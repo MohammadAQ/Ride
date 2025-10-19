@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../services/auth_service.dart';
+
 class PasswordScreen extends StatefulWidget {
   final String email;
   const PasswordScreen({super.key, required this.email});
@@ -17,6 +19,7 @@ class _PasswordScreenState extends State<PasswordScreen> {
   Future<void> _login() async {
     final password = _passwordController.text.trim();
     if (password.isEmpty) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter your password')),
       );
@@ -24,18 +27,28 @@ class _PasswordScreenState extends State<PasswordScreen> {
     }
 
     try {
+      if (!mounted) return;
       setState(() => _isLoading = true);
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: widget.email,
+      await AuthService.signIn(
+        email: widget.email.trim(),
         password: password,
       );
-      print('✅ Login successful for ${widget.email}');
+      if (!mounted) return;
+      AuthService.navigateToAuthRoot(context);
     } on FirebaseAuthException catch (e) {
-      print('❌ Login failed: ${e.code} - ${e.message}');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Invalid credentials')),
+        SnackBar(content: Text(AuthService.errorMessage(e))),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unexpected error. Please try again.'),
+        ),
       );
     } finally {
+      if (!mounted) return;
       setState(() => _isLoading = false);
     }
   }
@@ -70,8 +83,10 @@ class _PasswordScreenState extends State<PasswordScreen> {
                   icon: Icon(_obscure
                       ? Icons.visibility_off
                       : Icons.visibility),
-                  onPressed: () =>
-                      setState(() => _obscure = !_obscure),
+                  onPressed: () {
+                    if (!mounted) return;
+                    setState(() => _obscure = !_obscure);
+                  },
                 ),
               ),
             ),
