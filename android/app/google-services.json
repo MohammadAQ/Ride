@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "494039887423",
+    "project_id": "carpal-b1f78",
+    "storage_bucket": "carpal-b1f78.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:494039887423:android:b3f75375d7f0c79c24128a",
+        "android_client_info": {
+          "package_name": "com.carpal.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDsKBjUHmQH08YiH5SdcQcBZbgMbsSri88"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
