@@ -8,6 +8,7 @@ class AuthService {
   static Future<UserCredential> signIn({
     required String email,
     required String password,
+ codex/review-shareride-repository-code-epjikw
     int maxRetries = 3,
   }) async {
     return _runWithNetworkRetries(
@@ -36,6 +37,9 @@ class AuthService {
   static Future<T> _runWithNetworkRetries<T>({
     required int maxRetries,
     required Future<T> Function() operation,
+
+    int maxRetries = 1,
+ main
   }) async {
     FirebaseAuthException? lastException;
 
@@ -62,6 +66,7 @@ class AuthService {
         );
   }
 
+ codex/review-shareride-repository-code-epjikw
   static Future<void> handleSuccessfulSignIn(BuildContext context) async {
     await _redirectToRoot(context);
   }
@@ -71,6 +76,27 @@ class AuthService {
     await _redirectToRoot(context);
   }
 
+
+  static Future<UserCredential> signUp({
+    required String email,
+    required String password,
+  }) {
+    return FirebaseAuth.instance.createUserWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+  }
+
+  static Future<void> handleSuccessfulSignIn(BuildContext context) async {
+    await _redirectToRoot(context);
+  }
+
+  @Deprecated('Use handleSuccessfulSignIn instead')
+  static Future<void> navigateToAuthRoot(BuildContext context) async {
+    await _redirectToRoot(context);
+  }
+
+ main
   static Future<void> _redirectToRoot(BuildContext context) async {
     final navigator = _navigatorFor(context);
     if (navigator == null || !navigator.mounted) {
