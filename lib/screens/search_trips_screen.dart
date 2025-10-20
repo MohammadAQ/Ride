@@ -72,6 +72,22 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     });
   }
 
+  void _loadAllTrips() {
+    setState(() {
+      _appliedFromCity = null;
+      _appliedToCity = null;
+    });
+  }
+
+  void _resetFilters() {
+    setState(() {
+      _selectedFromCity = null;
+      _selectedToCity = null;
+    });
+
+    _loadAllTrips();
+  }
+
   Widget _buildFilters(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
@@ -156,6 +172,19 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                 child: FilledButton(
                   onPressed: _onSearchPressed,
                   child: const Text('بحث'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _resetFilters,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('إعادة التعيين'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey[200],
+                    foregroundColor: Colors.deepPurple,
+                  ),
                 ),
               ),
             ],
