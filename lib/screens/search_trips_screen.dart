@@ -1,6 +1,20 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+const List<String> westBankCities = [
+  'رام الله',
+  'البيرة',
+  'نابلس',
+  'جنين',
+  'طولكرم',
+  'قلقيلية',
+  'طوباس',
+  'سلفيت',
+  'أريحا',
+  'بيت لحم',
+  'الخليل',
+];
+
 class SearchTripsScreen extends StatefulWidget {
   const SearchTripsScreen({super.key, this.showAppBar = true});
 
@@ -11,8 +25,129 @@ class SearchTripsScreen extends StatefulWidget {
 }
 
 class _SearchTripsScreenState extends State<SearchTripsScreen> {
+  String? _selectedFromCity;
+  String? _selectedToCity;
+  String? _appliedFromCity;
+  String? _appliedToCity;
+
   Future<void> _onRefresh() async {
-    await FirebaseFirestore.instance.collection('trips').get();
+    await _buildQuery().get();
+  }
+
+  Query<Map<String, dynamic>> _buildQuery() {
+    var query = FirebaseFirestore.instance.collection('trips');
+
+    final fromCity = _appliedFromCity;
+    if (fromCity != null && fromCity.isNotEmpty) {
+      query = query.where('fromCity', isEqualTo: fromCity);
+    }
+
+    final toCity = _appliedToCity;
+    if (toCity != null && toCity.isNotEmpty) {
+      query = query.where('toCity', isEqualTo: toCity);
+    }
+
+    return query;
+  }
+
+  void _onSearchPressed() {
+    setState(() {
+      _appliedFromCity = _selectedFromCity;
+      _appliedToCity = _selectedToCity;
+    });
+  }
+
+  Widget _buildFilters(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Card(
+        color: colorScheme.surface.withOpacity(0.95),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+        elevation: 4,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'البحث عن الرحلات',
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      value: _selectedFromCity,
+                      decoration: const InputDecoration(
+                        labelText: 'من',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: westBankCities
+                          .map(
+                            (city) => DropdownMenuItem<String>(
+                              value: city,
+                              child: Text(city),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedFromCity = value;
+                        });
+                      },
+                      isExpanded: true,
+                      hint: const Text('اختر مدينة الانطلاق'),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      value: _selectedToCity,
+                      decoration: const InputDecoration(
+                        labelText: 'إلى',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: westBankCities
+                          .map(
+                            (city) => DropdownMenuItem<String>(
+                              value: city,
+                              child: Text(city),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedToCity = value;
+                        });
+                      },
+                      isExpanded: true,
+                      hint: const Text('اختر مدينة الوصول'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _onSearchPressed,
+                  child: const Text('بحث'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -36,75 +171,90 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
           onRefresh: _onRefresh,
           color: Theme.of(context).colorScheme.primary,
           child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream:
-                FirebaseFirestore.instance.collection('trips').snapshots(),
+            stream: _buildQuery().snapshots(),
             builder: (context, snapshot) {
+              final children = <Widget>[
+                _buildFilters(context),
+              ];
+
               if (snapshot.hasError) {
-                return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: [
-                    SizedBox(
-                      height: MediaQuery.of(context).size.height * 0.4,
-                      child: Center(
-                        child: Text(
-                          'Something went wrong. Please try again later.',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                          textAlign: TextAlign.center,
-                        ),
+                children.add(
+                  SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.4,
+                    child: Center(
+                      child: Text(
+                        'Something went wrong. Please try again later.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        textAlign: TextAlign.center,
                       ),
                     ),
-                  ],
+                  ),
+                );
+
+                return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+                  children: children,
                 );
               }
 
               if (snapshot.connectionState == ConnectionState.waiting) {
+                children.add(
+                  const SizedBox(
+                    height: 280,
+                    child: Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  ),
+                );
+
                 return ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  children: const [
-                    SizedBox(
-                      height: 280,
-                      child: Center(
-                        child: CircularProgressIndicator(),
-                      ),
-                    ),
-                  ],
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+                  children: children,
                 );
               }
 
               final docs = snapshot.data?.docs ?? [];
 
               if (docs.isEmpty) {
-                return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(24),
-                  children: [
-                    SizedBox(
-                      height: MediaQuery.of(context).size.height * 0.4,
-                      child: Center(
-                        child: Text(
-                          'No trips available',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onBackground
-                                    .withOpacity(0.7),
-                              ),
-                        ),
+                children.add(
+                  SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.4,
+                    child: Center(
+                      child: Text(
+                        'No trips found',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onBackground
+                                  .withOpacity(0.7),
+                            ),
                       ),
                     ),
-                  ],
+                  ),
+                );
+
+                return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+                  children: children,
                 );
               }
 
               return ListView.builder(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-                itemCount: docs.length,
+                itemCount: docs.length + 1,
                 itemBuilder: (context, index) {
-                  final data = docs[index].data();
+                  if (index == 0) {
+                    return _buildFilters(context);
+                  }
+
+                  final data = docs[index - 1].data();
                   final fromCity = (data['fromCity'] ?? '').toString();
                   final toCity = (data['toCity'] ?? '').toString();
                   final notesValue = data['notes'];
