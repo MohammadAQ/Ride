@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:carpal_app/firebase_options.dart';
+import 'package:carpal_app/screens/create_trip_screen.dart';
+import 'package:carpal_app/screens/profile_screen.dart';
+import 'package:carpal_app/screens/search_trips_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -12,10 +13,19 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
-  static const List<Widget> _pages = <Widget>[
-    Center(child: Text('Search Trips Screen Placeholder')),
-    Center(child: Text('Create Trip Screen Placeholder')),
-    Center(child: Text('Profile Screen Placeholder')),
+  static const List<_Destination> _destinations = <_Destination>[
+    _Destination(
+      title: 'Search Trips',
+      page: SearchTripsScreen(showAppBar: false),
+    ),
+    _Destination(
+      title: 'Create Trip',
+      page: CreateTripScreen(showAppBar: false),
+    ),
+    _Destination(
+      title: 'Profile',
+      page: ProfileScreen(showAppBar: false),
+    ),
   ];
 
   void _onItemTapped(int index) {
@@ -25,20 +35,14 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   @override
-  void initState() {
-    super.initState();
-    Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Share a Ride'),
+        title: Text(_destinations[_selectedIndex].title),
         backgroundColor: Colors.deepPurple,
         foregroundColor: Colors.white,
       ),
-      body: Center(child: _pages[_selectedIndex]),
+      body: _destinations[_selectedIndex].page,
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
@@ -61,4 +65,11 @@ class _MainScreenState extends State<MainScreen> {
       ),
     );
   }
+}
+
+class _Destination {
+  const _Destination({required this.title, required this.page});
+
+  final String title;
+  final Widget page;
 }
