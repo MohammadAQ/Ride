@@ -39,22 +39,36 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
         FirebaseFirestore.instance.collection('trips');
 
     final fromCity = _appliedFromCity;
-    if (fromCity != null && fromCity.isNotEmpty) {
-      query = query.where('fromCity', isEqualTo: fromCity);
+    final trimmedFrom = fromCity?.trim();
+    if (trimmedFrom != null && trimmedFrom.isNotEmpty) {
+      query = query.where('from', isEqualTo: trimmedFrom);
     }
 
     final toCity = _appliedToCity;
-    if (toCity != null && toCity.isNotEmpty) {
-      query = query.where('toCity', isEqualTo: toCity);
+    final trimmedTo = toCity?.trim();
+    if (trimmedTo != null && trimmedTo.isNotEmpty) {
+      query = query.where('to', isEqualTo: trimmedTo);
     }
+
+    print(
+      'Firestore query filters -> from: '
+      '${trimmedFrom != null && trimmedFrom.isNotEmpty ? '"$trimmedFrom"' : '(any)'}'
+      ', to: '
+      '${trimmedTo != null && trimmedTo.isNotEmpty ? '"$trimmedTo"' : '(any)'}',
+    );
 
     return query;
   }
 
   void _onSearchPressed() {
+    final fromCity = (_selectedFromCity ?? '').trim();
+    final toCity = (_selectedToCity ?? '').trim();
+
+    print('Searching trips with fromCity: "$fromCity", toCity: "$toCity"');
+
     setState(() {
-      _appliedFromCity = _selectedFromCity;
-      _appliedToCity = _selectedToCity;
+      _appliedFromCity = fromCity.isEmpty ? null : fromCity;
+      _appliedToCity = toCity.isEmpty ? null : toCity;
     });
   }
 
@@ -224,7 +238,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                     height: MediaQuery.of(context).size.height * 0.4,
                     child: Center(
                       child: Text(
-                        'No trips found',
+                        'لا توجد رحلات متاحة',
                         style: Theme.of(context)
                             .textTheme
                             .titleMedium
@@ -256,8 +270,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                   }
 
                   final data = docs[index - 1].data();
-                  final fromCity = (data['fromCity'] ?? '').toString();
-                  final toCity = (data['toCity'] ?? '').toString();
+                  final fromCity = (data['from'] ?? '').toString();
+                  final toCity = (data['to'] ?? '').toString();
                   final notesValue = data['notes'];
                   final notes = notesValue == null ? null : notesValue.toString();
 
