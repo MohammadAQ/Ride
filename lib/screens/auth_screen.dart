@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:carpal_app/screens/home_screen.dart';
+import 'package:carpal_app/screens/login_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -12,9 +12,13 @@ class _AuthScreenState extends State<AuthScreen> {
   final _emailController = TextEditingController();
 
   void _continue() {
-    if (_emailController.text.isNotEmpty) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
+    final email = _emailController.text.trim();
+
+    if (email.isNotEmpty) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => LoginScreen(initialEmail: email),
+        ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
