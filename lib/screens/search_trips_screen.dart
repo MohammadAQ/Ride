@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const List<String> westBankCities = [
   'رام الله',
@@ -58,6 +59,211 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     );
 
     return query;
+  }
+
+  void _showTripDetails(
+    BuildContext context,
+    Map<String, dynamic> data,
+  ) {
+    final fromCity = (data['from'] ?? '').toString();
+    final toCity = (data['to'] ?? '').toString();
+    final dateText = _formatDate(data['date']);
+    final priceText = _formatPrice(data['price']);
+    final notesValue = data['notes'];
+    final notes = notesValue == null ? null : notesValue.toString().trim();
+    final driverName = (data['driverName'] ?? '').toString();
+    final carModel = (data['carModel'] ?? '').toString();
+    final carColor = (data['carColor'] ?? '').toString();
+    final phoneNumber = (data['phoneNumber'] ?? '').toString();
+
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final labelStyle = theme.textTheme.bodyMedium?.copyWith(
+      fontWeight: FontWeight.bold,
+      color: colorScheme.primary,
+    );
+    final valueStyle = theme.textTheme.bodyLarge?.copyWith(
+      fontWeight: FontWeight.w600,
+      color: colorScheme.onSurface,
+    );
+
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (modalContext) {
+        final bottomPadding = MediaQuery.of(modalContext).viewInsets.bottom;
+
+        Future<void> launchCall() async {
+          if (phoneNumber.trim().isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('رقم الهاتف غير متاح لهذه الرحلة.'),
+              ),
+            );
+            return;
+          }
+
+          final uri = Uri(scheme: 'tel', path: phoneNumber.trim());
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('تعذّر فتح تطبيق الاتصال.'),
+              ),
+            );
+          }
+        }
+
+        Widget buildDetailRow({
+          required String icon,
+          required String label,
+          required String value,
+          bool isLink = false,
+          VoidCallback? onTap,
+        }) {
+          final displayValue = value.trim().isEmpty ? 'غير متوفر' : value.trim();
+          final rowContent = Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                icon,
+                style: theme.textTheme.titleLarge,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(label, style: labelStyle),
+                    const SizedBox(height: 4),
+                    Text(
+                      displayValue,
+                      style: isLink
+                          ? valueStyle?.copyWith(color: colorScheme.secondary)
+                          : valueStyle,
+                    ),
+                  ],
+                ),
+              ),
+              if (isLink)
+                Icon(
+                  Icons.call,
+                  color: colorScheme.secondary,
+                ),
+            ],
+          );
+
+          final paddedRow = Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: rowContent,
+          );
+
+          if (!isLink || onTap == null) {
+            return paddedRow;
+          }
+
+          return InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: onTap,
+            child: paddedRow,
+          );
+        }
+
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: SingleChildScrollView(
+            padding: EdgeInsets.only(
+              left: 24,
+              right: 24,
+              top: 16,
+              bottom: 16 + bottomPadding,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                buildDetailRow(
+                  icon: '🚗',
+                  label: 'من → إلى',
+                  value: '$fromCity → $toCity',
+                ),
+                const SizedBox(height: 16),
+                buildDetailRow(
+                  icon: '📅',
+                  label: 'التاريخ',
+                  value: dateText,
+                ),
+                const SizedBox(height: 16),
+                buildDetailRow(
+                  icon: '💰',
+                  label: 'السعر',
+                  value: priceText,
+                ),
+                const SizedBox(height: 16),
+                buildDetailRow(
+                  icon: '👤',
+                  label: 'اسم السائق',
+                  value: driverName,
+                ),
+                const SizedBox(height: 16),
+                buildDetailRow(
+                  icon: '🚙',
+                  label: 'موديل السيارة',
+                  value: carModel,
+                ),
+                const SizedBox(height: 16),
+                buildDetailRow(
+                  icon: '🎨',
+                  label: 'لون السيارة',
+                  value: carColor,
+                ),
+                const SizedBox(height: 16),
+                buildDetailRow(
+                  icon: '📞',
+                  label: 'رقم الهاتف',
+                  value: phoneNumber,
+                  isLink: true,
+                  onTap: launchCall,
+                ),
+                if (notes != null && notes.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  buildDetailRow(
+                    icon: '📝',
+                    label: 'ملاحظات',
+                    value: notes,
+                  ),
+                ],
+                const SizedBox(height: 24),
+                FilledButton.tonal(
+                  onPressed: () => Navigator.of(modalContext).pop(),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: const Text('إغلاق'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _onSearchPressed() {
@@ -318,6 +524,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                       date: dateText,
                       price: priceText,
                       notes: notes,
+                      onTap: () => _showTripDetails(context, data),
                     ),
                   );
                 },
@@ -388,6 +595,7 @@ class TripCard extends StatelessWidget {
     required this.date,
     required this.price,
     this.notes,
+    this.onTap,
   });
 
   final String fromCity;
@@ -395,6 +603,7 @@ class TripCard extends StatelessWidget {
   final String date;
   final String price;
   final String? notes;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -407,74 +616,78 @@ class TripCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
       ),
       color: colorScheme.surface.withOpacity(0.95),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Flexible(
-                  child: Text(
-                    fromCity,
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.onSurface,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(
-                  Icons.arrow_forward_rounded,
-                  color: colorScheme.primary,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    toCity,
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.onSurface,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.end,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    date,
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      fromCity,
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                ),
-                Text(
-                  price,
-                  style: textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.arrow_forward_rounded,
                     color: colorScheme.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      toCity,
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      date,
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurface.withOpacity(0.8),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    price,
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+              if (notes != null && notes!.trim().isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  notes!,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface.withOpacity(0.7),
                   ),
                 ),
               ],
-            ),
-            if (notes != null && notes!.trim().isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(
-                notes!,
-                style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withOpacity(0.7),
-                ),
-              ),
             ],
-          ],
+          ),
         ),
       ),
     );
