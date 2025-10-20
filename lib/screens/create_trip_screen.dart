@@ -28,17 +28,20 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _dateController = TextEditingController();
+  final TextEditingController _timeController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
 
   String? _fromCity;
   String? _toCity;
   DateTime? _selectedDate;
+  TimeOfDay? _selectedTime;
   bool _isSubmitting = false;
 
   @override
   void dispose() {
     _dateController.dispose();
+    _timeController.dispose();
     _priceController.dispose();
     _notesController.dispose();
     super.dispose();
@@ -65,11 +68,38 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     }
   }
 
+  Future<void> _pickTime() async {
+    FocusScope.of(context).unfocus();
+
+    final TimeOfDay initialTime = _selectedTime ?? TimeOfDay.now();
+
+    final TimeOfDay? pickedTime = await showTimePicker(
+      context: context,
+      initialTime: initialTime,
+    );
+
+    if (pickedTime != null) {
+      setState(() {
+        _selectedTime = pickedTime;
+        _timeController.text = _formatTime(pickedTime);
+      });
+    }
+  }
+
   String _formatDate(DateTime date) {
     final String year = date.year.toString().padLeft(4, '0');
     final String month = date.month.toString().padLeft(2, '0');
     final String day = date.day.toString().padLeft(2, '0');
     return '$year-$month-$day';
+  }
+
+  String _formatTime(TimeOfDay time) {
+    final MaterialLocalizations localizations = MaterialLocalizations.of(context);
+    final MediaQueryData mediaQuery = MediaQuery.of(context);
+    return localizations.formatTimeOfDay(
+      time,
+      alwaysUse24HourFormat: mediaQuery.alwaysUse24HourFormat,
+    );
   }
 
   Future<void> _submit() async {
@@ -102,6 +132,18 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please choose a valid date.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    final TimeOfDay? time = _selectedTime;
+    if (time == null) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please choose a valid time.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -151,12 +193,20 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
     try {
       final String notes = _notesController.text.trim();
+      final DateTime departureDateTime = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
 
       await FirebaseFirestore.instance.collection('trips').add({
         'from': fromCity,
         'to': toCity,
-        'date': Timestamp.fromDate(date),
+        'date': Timestamp.fromDate(departureDateTime),
         'price': price,
+        'time': _formatTime(time),
         if (notes.isNotEmpty) 'notes': notes,
         'driverId': user.uid,
         'createdAt': FieldValue.serverTimestamp(),
@@ -175,8 +225,10 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
         _fromCity = null;
         _toCity = null;
         _selectedDate = null;
+        _selectedTime = null;
       });
       _dateController.clear();
+      _timeController.clear();
       _priceController.clear();
       _notesController.clear();
 
@@ -309,6 +361,24 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                         validator: (value) {
                           if (_selectedDate == null) {
                             return 'Please choose a valid date.';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _timeController,
+                        readOnly: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Time',
+                          hintText: 'Select trip time',
+                          prefixIcon: Icon(Icons.access_time),
+                          border: OutlineInputBorder(),
+                        ),
+                        onTap: _pickTime,
+                        validator: (value) {
+                          if (_selectedTime == null) {
+                            return 'Please choose a valid time.';
                           }
                           return null;
                         },
