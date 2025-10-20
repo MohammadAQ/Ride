@@ -3,7 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:carpal_app/screens/home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final String initialEmail;
+
+  const LoginScreen({super.key, this.initialEmail = ''});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -15,6 +17,12 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _isLogin = true;
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailController.text = widget.initialEmail;
+  }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
