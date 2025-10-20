@@ -8,9 +8,8 @@ class AuthService {
   static Future<UserCredential> signIn({
     required String email,
     required String password,
- codex/review-shareride-repository-code-epjikw
     int maxRetries = 3,
-  }) async {
+  }) {
     return _runWithNetworkRetries(
       maxRetries: maxRetries,
       operation: () => FirebaseAuth.instance.signInWithEmailAndPassword(
@@ -24,7 +23,7 @@ class AuthService {
     required String email,
     required String password,
     int maxRetries = 3,
-  }) async {
+  }) {
     return _runWithNetworkRetries(
       maxRetries: maxRetries,
       operation: () => FirebaseAuth.instance.createUserWithEmailAndPassword(
@@ -37,9 +36,6 @@ class AuthService {
   static Future<T> _runWithNetworkRetries<T>({
     required int maxRetries,
     required Future<T> Function() operation,
-
-    int maxRetries = 1,
- main
   }) async {
     FirebaseAuthException? lastException;
 
@@ -51,6 +47,13 @@ class AuthService {
         final isNetworkError = e.code == 'network-request-failed';
         if (!isNetworkError || attempt == maxRetries) {
           rethrow;
+        }
+
+        if (kDebugMode) {
+          debugPrint(
+            'Retrying Firebase Auth operation after network error '
+            '(attempt ${attempt + 1} of ${maxRetries + 1}).',
+          );
         }
 
         final backoffMilliseconds = 400 * (attempt + 1);
@@ -66,7 +69,6 @@ class AuthService {
         );
   }
 
- codex/review-shareride-repository-code-epjikw
   static Future<void> handleSuccessfulSignIn(BuildContext context) async {
     await _redirectToRoot(context);
   }
@@ -76,27 +78,6 @@ class AuthService {
     await _redirectToRoot(context);
   }
 
-
-  static Future<UserCredential> signUp({
-    required String email,
-    required String password,
-  }) {
-    return FirebaseAuth.instance.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
-  }
-
-  static Future<void> handleSuccessfulSignIn(BuildContext context) async {
-    await _redirectToRoot(context);
-  }
-
-  @Deprecated('Use handleSuccessfulSignIn instead')
-  static Future<void> navigateToAuthRoot(BuildContext context) async {
-    await _redirectToRoot(context);
-  }
-
- main
   static Future<void> _redirectToRoot(BuildContext context) async {
     final navigator = _navigatorFor(context);
     if (navigator == null || !navigator.mounted) {
