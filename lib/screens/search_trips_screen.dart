@@ -35,7 +35,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
   }
 
   Query<Map<String, dynamic>> _buildQuery() {
-    var query = FirebaseFirestore.instance.collection('trips');
+    Query<Map<String, dynamic>> query =
+        FirebaseFirestore.instance.collection('trips');
 
     final fromCity = _appliedFromCity;
     if (fromCity != null && fromCity.isNotEmpty) {
