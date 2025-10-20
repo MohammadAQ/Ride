@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
 import 'package:carpal_app/screens/main_screen.dart';
+import 'package:carpal_app/screens/register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final String initialEmail;
@@ -15,7 +17,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _isLogin = true;
   bool _isLoading = false;
 
   @override
@@ -24,25 +25,23 @@ class _LoginScreenState extends State<LoginScreen> {
     _emailController.text = widget.initialEmail;
   }
 
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
     try {
-      if (_isLogin) {
-        // تسجيل الدخول
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-        );
-      } else {
-        // إنشاء مستخدم جديد
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-        );
-      }
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
 
       // بعد النجاح → الذهاب إلى الصفحة الرئيسية
       if (!mounted) return;
@@ -60,9 +59,11 @@ class _LoginScreenState extends State<LoginScreen> {
         message = 'Invalid password.';
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -140,16 +141,25 @@ class _LoginScreenState extends State<LoginScreen> {
                           horizontal: 60,
                         ),
                       ),
-                      child: Text(_isLogin ? 'Login' : 'Create Account'),
+                      child: const Text('Login'),
                     ),
 
-                  TextButton(
-                    onPressed: () {
-                      setState(() => _isLogin = !_isLogin);
-                    },
-                    child: Text(_isLogin
-                        ? 'Create a new account'
-                        : 'I already have an account'),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text("Don't have an account?"),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const RegisterScreen(),
+                            ),
+                          );
+                        },
+                        child: const Text('Create Account'),
+                      ),
+                    ],
                   ),
                 ],
               ),
