@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:carpal_app/screens/home_screen.dart';
+import 'package:carpal_app/screens/main_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final String initialEmail;
@@ -45,11 +45,11 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       // بعد النجاح → الذهاب إلى الصفحة الرئيسية
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
-        );
-      }
+      if (!mounted) return;
+
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const MainScreen()),
+      );
     } on FirebaseAuthException catch (e) {
       String message = 'Authentication failed';
       if (e.code == 'email-already-in-use') {
