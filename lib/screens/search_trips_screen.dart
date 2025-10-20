@@ -1,6 +1,6 @@
+import 'package:carpal_app/services/phone_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 const List<String> westBankCities = [
   'رام الله',
@@ -99,7 +99,9 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
         final bottomPadding = MediaQuery.of(modalContext).viewInsets.bottom;
 
         Future<void> launchCall() async {
-          if (phoneNumber.trim().isEmpty) {
+          final sanitizedNumber = phoneNumber.trim();
+
+          if (sanitizedNumber.isEmpty) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('رقم الهاتف غير متاح لهذه الرحلة.'),
@@ -108,10 +110,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
             return;
           }
 
-          final uri = Uri(scheme: 'tel', path: phoneNumber.trim());
-          if (await canLaunchUrl(uri)) {
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
-          } else {
+          final canOpenDialer = await PhoneLauncher.launchDialer(sanitizedNumber);
+          if (!canOpenDialer) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('تعذّر فتح تطبيق الاتصال.'),
