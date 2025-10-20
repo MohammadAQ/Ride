@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'search_trips_screen.dart';
-import 'create_trip_screen.dart';
-import 'profile_screen.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:carpal_app/firebase_options.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -13,10 +12,10 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
-  final List<Widget> _pages = const [
-    SearchTripsScreen(),
-    CreateTripScreen(),
-    ProfileScreen(),
+  static const List<Widget> _pages = <Widget>[
+    Center(child: Text('Search Trips Screen Placeholder')),
+    Center(child: Text('Create Trip Screen Placeholder')),
+    Center(child: Text('Profile Screen Placeholder')),
   ];
 
   void _onItemTapped(int index) {
@@ -26,20 +25,33 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _pages[_selectedIndex],
+      appBar: AppBar(
+        title: const Text('Share a Ride'),
+        backgroundColor: Colors.deepPurple,
+        foregroundColor: Colors.white,
+      ),
+      body: Center(child: _pages[_selectedIndex]),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
+        selectedItemColor: Colors.deepPurple,
+        unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.search),
-            label: 'Search',
+            label: 'Search Trips',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.add_circle),
-            label: 'Create',
+            icon: Icon(Icons.add_circle_outline),
+            label: 'Create Trip',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person),

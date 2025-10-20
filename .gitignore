@@ -9,6 +9,7 @@ build/
 .idea/
 .vscode/
 *.iml
+pubspec.yaml
 
 # Android
 .gradle/

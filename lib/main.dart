@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
-import 'screens/login_screen.dart';
-import 'screens/main_screen.dart';
+import 'package:carpal_app/screens/auth_screen.dart';
+import 'package:carpal_app/screens/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,10 +43,11 @@ class AuthWrapper extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
+
         if (snapshot.hasData) {
-          return const MainScreen();
+          return const HomeScreen();
         } else {
-          return const LoginScreen();
+          return const AuthScreen();
         }
       },
     );
