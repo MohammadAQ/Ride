@@ -63,11 +63,20 @@ export interface AppConfig {
   firebaseEnabled: boolean;
 }
 
+const normaliseFirebasePrivateKey = (value: string): string => {
+  const hasEnclosingQuotes =
+    (value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"));
+
+  const unwrapped = hasEnclosingQuotes ? value.slice(1, -1) : value;
+
+  return unwrapped.replace(/\\n/g, '\n');
+};
+
 const firebaseConfig = isFirebaseConfigured
   ? {
       projectId: process.env.FIREBASE_PROJECT_ID as string,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL as string,
-      privateKey: (process.env.FIREBASE_PRIVATE_KEY as string).replace(/\\n/g, '\n'),
+      privateKey: normaliseFirebasePrivateKey(process.env.FIREBASE_PRIVATE_KEY as string),
     }
   : undefined;
 
