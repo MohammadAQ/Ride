@@ -1,6 +1,6 @@
 import admin from 'firebase-admin';
-import { env } from './env';
-import logger from '../utils/logger';
+import { env } from './env.js';
+import logger from '../utils/logger.js';
 
 let initialized = false;
 

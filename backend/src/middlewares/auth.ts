@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
-import AppError from '../utils/appError';
-import { getFirebaseAuth } from '../config/firebase';
+import AppError from '../utils/appError.js';
+import { getFirebaseAuth } from '../config/firebase.js';
 
 export const authenticate = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
   const header = req.headers.authorization;

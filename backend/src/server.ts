@@ -2,10 +2,10 @@ import express from 'express';
 import path from 'path';
 import swaggerUi from 'swagger-ui-express';
 import YAML from 'yamljs';
-import router from './routes';
-import { applySecurityMiddlewares } from './middlewares/security';
-import { errorHandler } from './middlewares/error';
-import logger from './utils/logger';
+import router from './routes/index.js';
+import { applySecurityMiddlewares } from './middlewares/security.js';
+import { errorHandler } from './middlewares/error.js';
+import logger from './utils/logger.js';
 
 export const createServer = () => {
   const app = express();

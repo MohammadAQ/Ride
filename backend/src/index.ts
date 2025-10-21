@@ -1,6 +1,6 @@
-import { env } from './config/env';
-import { createServer } from './server';
-import logger from './utils/logger';
+import { env } from './config/env.js';
+import { createServer } from './server.js';
+import logger from './utils/logger.js';
 
 const app = createServer();
 

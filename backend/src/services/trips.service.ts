@@ -1,7 +1,7 @@
 import { Timestamp } from 'firebase-admin/firestore';
-import { getFirestore } from '../config/firebase';
-import AppError from '../utils/appError';
-import type { CreateTripInput, UpdateTripInput } from '../schemas/trips.schema';
+import { getFirestore } from '../config/firebase.js';
+import AppError from '../utils/appError.js';
+import type { CreateTripInput, UpdateTripInput } from '../schemas/trips.schema.js';
 
 export interface Trip {
   id: string;
