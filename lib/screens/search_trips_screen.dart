@@ -597,8 +597,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                   }
 
                   final data = docs[index - 1].data();
-                  final fromCity = (data['from'] ?? '').toString();
-                  final toCity = (data['to'] ?? '').toString();
+                  final fromCity = (data['fromCity'] ?? data['from'] ?? '').toString();
+                  final toCity = (data['toCity'] ?? data['to'] ?? '').toString();
                   final notesValue = data['notes'];
                   final notes = notesValue == null ? null : notesValue.toString();
 
@@ -714,60 +714,58 @@ class TripCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      fromCity,
-                      style: textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.onSurface,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+              Directionality(
+                textDirection: TextDirection.rtl,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.directions_car,
+                      color: colorScheme.primary,
+                      size: 20,
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    Icons.arrow_forward_rounded,
-                    color: colorScheme.primary,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      toCity,
-                      style: textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.onSurface,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'من: $fromCity  →  إلى: $toCity',
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                          color: colorScheme.onSurface,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
                       ),
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.end,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      date,
-                      style: textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurface.withOpacity(0.8),
+              Directionality(
+                textDirection: TextDirection.rtl,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        date,
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurface.withOpacity(0.8),
+                        ),
+                        textAlign: TextAlign.right,
                       ),
                     ),
-                  ),
-                  Text(
-                    price,
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.primary,
+                    Text(
+                      price,
+                      style: textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.primary,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               if (notes != null && notes!.trim().isNotEmpty) ...[
                 const SizedBox(height: 12),
