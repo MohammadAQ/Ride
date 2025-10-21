@@ -6,7 +6,7 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
   const header = req.headers.authorization;
 
   if (!header || !header.startsWith('Bearer ')) {
-    throw new AppError('Authentication required', 401);
+    throw new AppError('Authentication token is missing', 401);
   }
 
   const token = header.replace('Bearer ', '').trim();

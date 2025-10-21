@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class ApiException implements Exception {
@@ -23,7 +24,18 @@ class TripsResponse {
 class ApiService {
   ApiService({http.Client? client}) : _client = client ?? http.Client();
 
-  static const String baseUrl = 'http://10.0.2.2:8080/api/v1';
+  static String get baseUrl {
+    if (kIsWeb) {
+      return 'http://localhost:8080/api/v1';
+    }
+
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return 'http://10.0.2.2:8080/api/v1';
+      default:
+        return 'http://localhost:8080/api/v1';
+    }
+  }
 
   final http.Client _client;
 
@@ -40,7 +52,9 @@ class ApiService {
   }
 
   Map<String, String> _buildHeaders({String? token, bool withJson = false}) {
-    final headers = <String, String>{};
+    final headers = <String, String>{
+      'Accept': 'application/json',
+    };
     if (token != null) {
       headers['Authorization'] = 'Bearer $token';
     }
@@ -50,18 +64,142 @@ class ApiService {
     return headers;
   }
 
-  Map<String, dynamic> _decodeBody(http.Response response) {
-    if (response.body.isEmpty) {
+  void _logResponse(String method, Uri uri, http.Response response) {
+    if (!kDebugMode) {
+      return;
+    }
+
+    debugPrint(
+      '[ApiService] $method ${uri.toString()} -> ${response.statusCode}: ${response.body}',
+    );
+  }
+
+  Never _throwForResponse(String method, Uri uri, http.Response response) {
+    String message = 'Request failed with status code ${response.statusCode}';
+
+    try {
+      if (response.bodyBytes.isNotEmpty) {
+        final decoded = json.decode(utf8.decode(response.bodyBytes));
+        if (decoded is Map<String, dynamic> && decoded['message'] != null) {
+          message = decoded['message'].toString();
+        }
+      }
+    } catch (_) {
+      // Ignore JSON parsing issues for error responses and fall back to the default message.
+    }
+
+    throw ApiException(response.statusCode, message);
+  }
+
+  dynamic _parseSuccessBody(http.Response response) {
+    if (response.bodyBytes.isEmpty) {
+      return null;
+    }
+
+    final bodyString = utf8.decode(response.bodyBytes);
+
+    try {
+      return json.decode(bodyString);
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint(
+          '[ApiService] Failed to decode response from '
+          '${response.request?.url.toString() ?? 'unknown'}: $error',
+        );
+        debugPrint(stackTrace.toString());
+      }
+      throw const ApiException(
+        500,
+        'تعذر قراءة استجابة الخادم. يرجى المحاولة مرة أخرى لاحقًا.',
+      );
+    }
+  }
+
+  List<Map<String, dynamic>> _normaliseTripList(List<dynamic> source) {
+    final trips = <Map<String, dynamic>>[];
+
+    for (final item in source) {
+      if (item is Map<String, dynamic>) {
+        trips.add(Map<String, dynamic>.from(item));
+      } else if (item is Map) {
+        trips.add(item.map((key, value) => MapEntry(key.toString(), value)));
+      }
+    }
+
+    return trips;
+  }
+
+  List<Map<String, dynamic>> _extractTrips(dynamic decoded) {
+    if (decoded == null) {
+      return <Map<String, dynamic>>[];
+    }
+
+    if (decoded is List) {
+      return _normaliseTripList(decoded);
+    }
+
+    if (decoded is Map<String, dynamic>) {
+      final data = decoded['trips'] ?? decoded['data'] ?? decoded['results'];
+      if (data is List) {
+        return _normaliseTripList(data);
+      }
+      return <Map<String, dynamic>>[];
+    }
+
+    if (decoded is Map) {
+      final map = decoded.map((key, value) => MapEntry(key.toString(), value));
+      final data = map['trips'] ?? map['data'] ?? map['results'];
+      if (data is List) {
+        return _normaliseTripList(data);
+      }
+    }
+
+    return <Map<String, dynamic>>[];
+  }
+
+  String? _extractNextCursor(dynamic decoded) {
+    if (decoded is Map<String, dynamic>) {
+      final next = decoded['nextCursor'] ?? decoded['cursor'];
+      if (next == null) {
+        return null;
+      }
+      if (next is String) {
+        return next.isEmpty ? null : next;
+      }
+      final nextAsString = next.toString();
+      return nextAsString.isEmpty ? null : nextAsString;
+    }
+
+    if (decoded is Map) {
+      final map = decoded.map((key, value) => MapEntry(key.toString(), value));
+      final next = map['nextCursor'] ?? map['cursor'];
+      if (next == null) {
+        return null;
+      }
+      if (next is String) {
+        return next.isEmpty ? null : next;
+      }
+      final nextAsString = next.toString();
+      return nextAsString.isEmpty ? null : nextAsString;
+    }
+
+    return null;
+  }
+
+  Map<String, dynamic> _mapFromDynamic(dynamic data) {
+    if (data == null) {
       return <String, dynamic>{};
     }
 
-    return json.decode(response.body) as Map<String, dynamic>;
-  }
+    if (data is Map<String, dynamic>) {
+      return Map<String, dynamic>.from(data);
+    }
 
-  Never _throwForResponse(http.Response response) {
-    final body = _decodeBody(response);
-    final message = body['message']?.toString() ?? 'Request failed';
-    throw ApiException(response.statusCode, message);
+    if (data is Map) {
+      return data.map((key, value) => MapEntry(key.toString(), value));
+    }
+
+    return <String, dynamic>{};
   }
 
   Future<TripsResponse> fetchTrips({
@@ -83,20 +221,19 @@ class ApiService {
     if (cursor != null && cursor.isNotEmpty) {
       params['cursor'] = cursor;
     }
-
     final uri = Uri.parse('$baseUrl/trips').replace(queryParameters: params.isEmpty ? null : params);
     final token = await _getToken(requiredForRequest: false);
     final response = await _client.get(uri, headers: _buildHeaders(token: token));
 
+    _logResponse('GET', uri, response);
+
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      _throwForResponse(response);
+      _throwForResponse('GET', uri, response);
     }
 
-    final body = _decodeBody(response);
-    final trips = (body['data'] as List<dynamic>? ?? <dynamic>[])
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
-    final nextCursor = body['nextCursor'] as String?;
+    final body = _parseSuccessBody(response);
+    final trips = _extractTrips(body);
+    final nextCursor = _extractNextCursor(body);
 
     return TripsResponse(trips: trips, nextCursor: nextCursor);
   }
@@ -114,58 +251,67 @@ class ApiService {
     final token = await _getToken(requiredForRequest: true);
     final response = await _client.get(uri, headers: _buildHeaders(token: token));
 
+    _logResponse('GET', uri, response);
+
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      _throwForResponse(response);
+      _throwForResponse('GET', uri, response);
     }
 
-    final body = _decodeBody(response);
-    final trips = (body['data'] as List<dynamic>? ?? <dynamic>[])
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
-    final nextCursor = body['nextCursor'] as String?;
+    final body = _parseSuccessBody(response);
+    final trips = _extractTrips(body);
+    final nextCursor = _extractNextCursor(body);
 
     return TripsResponse(trips: trips, nextCursor: nextCursor);
   }
 
   Future<Map<String, dynamic>> createTrip(Map<String, dynamic> payload) async {
     final token = await _getToken(requiredForRequest: true);
+    final uri = Uri.parse('$baseUrl/trips');
     final response = await _client.post(
-      Uri.parse('$baseUrl/trips'),
+      uri,
       headers: _buildHeaders(token: token, withJson: true),
       body: json.encode(payload),
     );
 
+    _logResponse('POST', uri, response);
+
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      _throwForResponse(response);
+      _throwForResponse('POST', uri, response);
     }
 
-    return _decodeBody(response);
+    return _mapFromDynamic(_parseSuccessBody(response));
   }
 
   Future<Map<String, dynamic>> updateTrip(String id, Map<String, dynamic> payload) async {
     final token = await _getToken(requiredForRequest: true);
+    final uri = Uri.parse('$baseUrl/trips/$id');
     final response = await _client.patch(
-      Uri.parse('$baseUrl/trips/$id'),
+      uri,
       headers: _buildHeaders(token: token, withJson: true),
       body: json.encode(payload),
     );
 
+    _logResponse('PATCH', uri, response);
+
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      _throwForResponse(response);
+      _throwForResponse('PATCH', uri, response);
     }
 
-    return _decodeBody(response);
+    return _mapFromDynamic(_parseSuccessBody(response));
   }
 
   Future<void> deleteTrip(String id) async {
     final token = await _getToken(requiredForRequest: true);
+    final uri = Uri.parse('$baseUrl/trips/$id');
     final response = await _client.delete(
-      Uri.parse('$baseUrl/trips/$id'),
+      uri,
       headers: _buildHeaders(token: token),
     );
 
+    _logResponse('DELETE', uri, response);
+
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      _throwForResponse(response);
+      _throwForResponse('DELETE', uri, response);
     }
   }
 }

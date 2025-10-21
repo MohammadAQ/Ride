@@ -7,8 +7,27 @@ import {
   updateTripHandler,
 } from '../controllers/trips.controller';
 import { authenticate } from '../middlewares/auth';
+import logger from '../utils/logger';
 
 const router = Router();
+
+router.use((req, res, next) => {
+  const start = Date.now();
+
+  res.on('finish', () => {
+    logger.info(
+      {
+        method: req.method,
+        url: req.originalUrl,
+        statusCode: res.statusCode,
+        durationMs: Date.now() - start,
+      },
+      'Handled trips request',
+    );
+  });
+
+  next();
+});
 
 router.get('/', getTripsHandler);
 router.get('/mine', authenticate, getMyTripsHandler);
