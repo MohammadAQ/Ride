@@ -45,13 +45,13 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     final fromCity = _appliedFromCity;
     final trimmedFrom = fromCity?.trim();
     if (trimmedFrom != null && trimmedFrom.isNotEmpty) {
-      query = query.where('from', isEqualTo: trimmedFrom);
+      query = query.where('fromCity', isEqualTo: trimmedFrom);
     }
 
     final toCity = _appliedToCity;
     final trimmedTo = toCity?.trim();
     if (trimmedTo != null && trimmedTo.isNotEmpty) {
-      query = query.where('to', isEqualTo: trimmedTo);
+      query = query.where('toCity', isEqualTo: trimmedTo);
     }
 
     print(
@@ -68,8 +68,14 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     BuildContext context,
     Map<String, dynamic> data,
   ) {
-    final fromCity = (data['from'] ?? '').toString();
-    final toCity = (data['to'] ?? '').toString();
+    final fromCity = (data['fromCity'] ?? data['from'] ?? '').toString();
+    final toCity = (data['toCity'] ?? data['to'] ?? '').toString();
+    final trimmedFromCity = fromCity.trim();
+    final trimmedToCity = toCity.trim();
+    final displayFromCity =
+        trimmedFromCity.isEmpty ? 'غير متوفر' : trimmedFromCity;
+    final displayToCity = trimmedToCity.isEmpty ? 'غير متوفر' : trimmedToCity;
+    final routeText = 'من: $displayFromCity → إلى: $displayToCity';
     final dateText = _formatDate(data['date']);
     final timeText = (data['time'] ?? '').toString();
     final priceText = _formatPrice(data['price']);
@@ -238,13 +244,27 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                buildDetailRow(
-                  leading: Text(
-                    '🚗',
-                    style: theme.textTheme.titleLarge,
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.directions_car,
+                        color: colorScheme.primary,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          routeText,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  label: 'من → إلى',
-                  value: '$fromCity → $toCity',
                 ),
                 const SizedBox(height: 16),
                 buildDetailRow(
