@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
+
+const MethodChannel _phoneLauncherChannel =
+    MethodChannel('com.example.carpal_app/phone_launcher');
 
 const List<String> westBankCities = [
   'رام الله',
@@ -111,18 +114,47 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
             return;
           }
 
-          final Uri telUri = Uri.parse('tel:$sanitizedNumber');
-          final bool launched = await launchUrl(
-            telUri,
-            mode: LaunchMode.externalApplication,
-          );
-          if (!launched) {
+          try {
+            final bool? launched = await _phoneLauncherChannel.invokeMethod<bool>(
+              'openDialer',
+              {'phoneNumber': sanitizedNumber},
+            );
+
+            if (launched != true) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('تعذّر فتح تطبيق الاتصال.'),
+                ),
+              );
+            }
+          } on PlatformException catch (error) {
+            debugPrint('Failed to launch dialer: $error');
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('تعذّر فتح تطبيق الاتصال.'),
               ),
             );
           }
+        }
+
+        void copyNumberToClipboard() {
+          final sanitizedNumber = phoneNumber.trim();
+
+          if (sanitizedNumber.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('رقم الهاتف غير متاح لهذه الرحلة.'),
+              ),
+            );
+            return;
+          }
+
+          Clipboard.setData(ClipboardData(text: sanitizedNumber));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تم نسخ رقم الهاتف إلى الحافظة.'),
+            ),
+          );
         }
 
         Widget buildDetailRow({
@@ -174,6 +206,11 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
           return InkWell(
             borderRadius: BorderRadius.circular(16),
             onTap: onTap,
+            onLongPress: () {
+              if (isLink) {
+                copyNumberToClipboard();
+              }
+            },
             child: paddedRow,
           );
         }
