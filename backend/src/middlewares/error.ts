@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
-import AppError from '../utils/appError';
-import logger from '../utils/logger';
+import AppError from '../utils/appError.js';
+import logger from '../utils/logger.js';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const errorHandler = (err: unknown, req: Request, res: Response, _next: NextFunction): void => {

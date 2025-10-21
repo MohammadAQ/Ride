@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import tripsRouter from './trips.routes';
+import tripsRouter from './trips.routes.js';
 
 const router = Router();
 

@@ -1,13 +1,13 @@
 import { Request, Response } from 'express';
-import AppError from '../utils/appError';
+import AppError from '../utils/appError.js';
 import {
   createTrip,
   deleteTrip,
   listTrips,
   listTripsByDriver,
   updateTrip,
-} from '../services/trips.service';
-import { CreateTripSchema, UpdateTripSchema } from '../schemas/trips.schema';
+} from '../services/trips.service.js';
+import { CreateTripSchema, UpdateTripSchema } from '../schemas/trips.schema.js';
 
 const parseLimit = (value: unknown): number => {
   const defaultLimit = 20;

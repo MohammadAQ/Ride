@@ -2,8 +2,8 @@ import cors from 'cors';
 import { Express } from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { env } from '../config/env';
-import AppError from '../utils/appError';
+import { env } from '../config/env.js';
+import AppError from '../utils/appError.js';
 
 export const applySecurityMiddlewares = (app: Express): void => {
   app.use(helmet());

@@ -5,9 +5,9 @@ import {
   getMyTripsHandler,
   getTripsHandler,
   updateTripHandler,
-} from '../controllers/trips.controller';
-import { authenticate } from '../middlewares/auth';
-import logger from '../utils/logger';
+} from '../controllers/trips.controller.js';
+import { authenticate } from '../middlewares/auth.js';
+import logger from '../utils/logger.js';
 
 const router = Router();
 
