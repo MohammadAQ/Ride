@@ -1,6 +1,9 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import '../services/api_service.dart';
 
 const MethodChannel _phoneLauncherChannel =
     MethodChannel('com.example.carpal_app/phone_launcher');
@@ -29,40 +32,89 @@ class SearchTripsScreen extends StatefulWidget {
 }
 
 class _SearchTripsScreenState extends State<SearchTripsScreen> {
+  final ApiService _apiService = ApiService();
+  final List<Map<String, dynamic>> _trips = <Map<String, dynamic>>[];
   String? _selectedFromCity;
   String? _selectedToCity;
   String? _appliedFromCity;
   String? _appliedToCity;
+  String? _nextCursor;
+  bool _isLoading = false;
+  bool _initialLoading = true;
+  String? _errorMessage;
 
-  Future<void> _onRefresh() async {
-    await _buildQuery().get();
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_fetchTrips(reset: true));
   }
 
-  Query<Map<String, dynamic>> _buildQuery() {
-    Query<Map<String, dynamic>> query =
-        FirebaseFirestore.instance.collection('trips');
-
-    final fromCity = _appliedFromCity;
-    final trimmedFrom = fromCity?.trim();
-    if (trimmedFrom != null && trimmedFrom.isNotEmpty) {
-      query = query.where('fromCity', isEqualTo: trimmedFrom);
+  Future<void> _fetchTrips({required bool reset}) async {
+    if (!mounted) {
+      return;
     }
 
-    final toCity = _appliedToCity;
-    final trimmedTo = toCity?.trim();
-    if (trimmedTo != null && trimmedTo.isNotEmpty) {
-      query = query.where('toCity', isEqualTo: trimmedTo);
+    setState(() {
+      _errorMessage = null;
+      _isLoading = true;
+      if (reset) {
+        if (_trips.isNotEmpty) {
+          _trips.clear();
+        }
+        _nextCursor = null;
+      }
+    });
+
+    try {
+      final response = await _apiService.fetchTrips(
+        fromCity: _appliedFromCity,
+        toCity: _appliedToCity,
+        limit: 20,
+        cursor: reset ? null : _nextCursor,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        if (reset) {
+          _trips
+            ..clear()
+            ..addAll(response.trips);
+        } else {
+          _trips.addAll(response.trips);
+        }
+        _nextCursor = response.nextCursor;
+        _initialLoading = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorMessage = error.message;
+        _initialLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorMessage = 'حدث خطأ غير متوقع. حاول مرة أخرى لاحقًا.';
+        _initialLoading = false;
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isLoading = false;
+      });
     }
-
-    print(
-      'Firestore query filters -> from: '
-      '${trimmedFrom != null && trimmedFrom.isNotEmpty ? '"$trimmedFrom"' : '(any)'}'
-      ', to: '
-      '${trimmedTo != null && trimmedTo.isNotEmpty ? '"$trimmedTo"' : '(any)'}',
-    );
-
-    return query;
   }
+
+  Future<void> _onRefresh() => _fetchTrips(reset: true);
 
   void _showTripDetails(
     BuildContext context,
@@ -362,12 +414,12 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     final fromCity = (_selectedFromCity ?? '').trim();
     final toCity = (_selectedToCity ?? '').trim();
 
-    print('Searching trips with fromCity: "$fromCity", toCity: "$toCity"');
-
     setState(() {
       _appliedFromCity = fromCity.isEmpty ? null : fromCity;
       _appliedToCity = toCity.isEmpty ? null : toCity;
     });
+
+    unawaited(_fetchTrips(reset: true));
   }
 
   void _loadAllTrips() {
@@ -375,6 +427,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       _appliedFromCity = null;
       _appliedToCity = null;
     });
+
+    unawaited(_fetchTrips(reset: true));
   }
 
   void _resetFilters() {
@@ -384,6 +438,14 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     });
 
     _loadAllTrips();
+  }
+
+  void _loadMoreTrips() {
+    if (_isLoading || _nextCursor == null) {
+      return;
+    }
+
+    unawaited(_fetchTrips(reset: false));
   }
 
   Widget _buildFilters(BuildContext context) {
@@ -512,117 +574,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
         child: RefreshIndicator(
           onRefresh: _onRefresh,
           color: Theme.of(context).colorScheme.primary,
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _buildQuery().snapshots(),
-            builder: (context, snapshot) {
-              final children = <Widget>[
-                _buildFilters(context),
-              ];
-
-              if (snapshot.hasError) {
-                children.add(
-                  SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.4,
-                    child: Center(
-                      child: Text(
-                        'Something went wrong. Please try again later.',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                );
-
-                return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-                  children: children,
-                );
-              }
-
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                children.add(
-                  const SizedBox(
-                    height: 280,
-                    child: Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                  ),
-                );
-
-                return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-                  children: children,
-                );
-              }
-
-              final docs = snapshot.data?.docs ?? [];
-
-              if (docs.isEmpty) {
-                children.add(
-                  SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.4,
-                    child: Center(
-                      child: Text(
-                        'لا توجد رحلات متاحة',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onBackground
-                                  .withOpacity(0.7),
-                            ),
-                      ),
-                    ),
-                  ),
-                );
-
-                return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-                  children: children,
-                );
-              }
-
-              return ListView.builder(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-                itemCount: docs.length + 1,
-                itemBuilder: (context, index) {
-                  if (index == 0) {
-                    return _buildFilters(context);
-                  }
-
-                  final data = docs[index - 1].data();
-                  final fromCity = (data['fromCity'] ?? data['from'] ?? '').toString();
-                  final toCity = (data['toCity'] ?? data['to'] ?? '').toString();
-                  final notesValue = data['notes'];
-                  final notes = notesValue == null ? null : notesValue.toString();
-
-                  final dateValue = data['date'];
-                  final dateText = _formatDate(dateValue);
-
-                  final priceValue = data['price'];
-                  final priceText = _formatPrice(priceValue);
-
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: TripCard(
-                      fromCity: fromCity,
-                      toCity: toCity,
-                      date: dateText,
-                      price: priceText,
-                      notes: notes,
-                      onTap: () => _showTripDetails(context, data),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
+          child: _buildTripList(context),
         ),
       ),
     );
@@ -640,17 +592,129 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     );
   }
 
+  Widget _buildTripList(BuildContext context) {
+    final List<Widget> children = <Widget>[_buildFilters(context)];
+
+    if (_initialLoading) {
+      children.add(
+        const SizedBox(
+          height: 280,
+          child: Center(
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      );
+    } else if (_errorMessage != null) {
+      children.addAll([
+        SizedBox(
+          height: MediaQuery.of(context).size.height * 0.25,
+          child: Center(
+            child: Text(
+              _errorMessage!,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onBackground
+                        .withOpacity(0.7),
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        FilledButton(
+          onPressed: () => _fetchTrips(reset: true),
+          child: const Text('إعادة المحاولة'),
+        ),
+      ]);
+    } else if (_trips.isEmpty) {
+      children.add(
+        SizedBox(
+          height: MediaQuery.of(context).size.height * 0.3,
+          child: Center(
+            child: Text(
+              'لا توجد رحلات مطابقة حاليًا.',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onBackground
+                        .withOpacity(0.7),
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    } else {
+      for (final data in _trips) {
+        final fromCity = (data['fromCity'] ?? '').toString().trim();
+        final toCity = (data['toCity'] ?? '').toString().trim();
+        final dateText = _formatDate(data['date']);
+        final priceText = _formatPrice(data['price']);
+
+        children.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: TripCard(
+              fromCity: fromCity.isEmpty ? 'غير متوفر' : fromCity,
+              toCity: toCity.isEmpty ? 'غير متوفر' : toCity,
+              date: dateText.isEmpty ? 'غير متوفر' : dateText,
+              price: priceText,
+              notes: (data['notes'] ?? '').toString().trim().isEmpty
+                  ? null
+                  : (data['notes'] ?? '').toString(),
+              onTap: () => _showTripDetails(context, data),
+            ),
+          ),
+        );
+      }
+    }
+
+    if (_nextCursor != null) {
+      children.add(
+        _isLoading
+            ? const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: OutlinedButton.icon(
+                  onPressed: _loadMoreTrips,
+                  icon: const Icon(Icons.expand_more),
+                  label: const Text('تحميل المزيد'),
+                ),
+              ),
+      );
+    }
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+      children: children,
+    );
+  }
+
   String _formatDate(dynamic date) {
-    if (date is Timestamp) {
-      final dateTime = date.toDate();
-      return '${_twoDigits(dateTime.day)}.${_twoDigits(dateTime.month)}.${dateTime.year}';
+    if (date is String) {
+      final trimmed = date.trim();
+      if (trimmed.isEmpty) {
+        return '';
+      }
+
+      final parsed = DateTime.tryParse(trimmed);
+      if (parsed != null) {
+        return '${_twoDigits(parsed.day)}.${_twoDigits(parsed.month)}.${parsed.year}';
+      }
+
+      return trimmed;
     }
 
     if (date is DateTime) {
       return '${_twoDigits(date.day)}.${_twoDigits(date.month)}.${date.year}';
     }
 
-    return date?.toString() ?? '';
+    return '';
   }
 
   String _formatPrice(dynamic price) {

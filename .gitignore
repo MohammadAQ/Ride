@@ -1,33 +1,23 @@
-# Flutter / Dart
-.dart_tool/
-.packages
-.pub/
-build/
-.flutter-plugins
-.flutter-plugins-dependencies
-.generated/
-.idea/
+# Global ignores
+node_modules/
+.env
+.env.*
+*.log
+
+# Backend build artifacts
+/backend/dist/
+/backend/node_modules/
+
+# Flutter build caches
+/frontend/.dart_tool/
+/frontend/build/
+/frontend/.pub/
+/frontend/.packages
+/frontend/ios/Pods/
+/frontend/android/.gradle/
+/frontend/android/app/release/
+
+# IDE settings
 .vscode/
-*.iml
-pubspec.yaml
-
-# Android
-.gradle/
-local.properties
-*.apk
-*.aar
-*.so
-
-# iOS
-Pods/
-Runner.xcworkspace/
-*.xcuserdatad
-*.xcuserstate
-*.xcsettings
-
-# Others
-*.zip
-*.rar
-*.exe
-*.dll
-*.pdb
+.idea/
+.DS_Store
