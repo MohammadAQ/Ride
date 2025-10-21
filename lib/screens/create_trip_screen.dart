@@ -30,6 +30,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   final TextEditingController _dateController = TextEditingController();
   final TextEditingController _timeController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
 
   String? _fromCity;
@@ -43,6 +44,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     _dateController.dispose();
     _timeController.dispose();
     _priceController.dispose();
+    _phoneController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -153,12 +155,24 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     final String? fromCity = _fromCity;
     final String? toCity = _toCity;
     final double? price = double.tryParse(_priceController.text.trim());
+    final String phoneNumber = _phoneController.text.trim();
     if (price == null) {
       // Should not happen because validator already checks this, but guard anyway.
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please enter a valid numeric price.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    if (phoneNumber.isEmpty) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please provide a valid phone number.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -207,6 +221,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
         'date': Timestamp.fromDate(departureDateTime),
         'price': price,
         'time': _formatTime(time),
+        'phoneNumber': phoneNumber,
         if (notes.isNotEmpty) 'notes': notes,
         'driverId': user.uid,
         'createdAt': FieldValue.serverTimestamp(),
@@ -230,6 +245,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       _dateController.clear();
       _timeController.clear();
       _priceController.clear();
+      _phoneController.clear();
       _notesController.clear();
 
       await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -402,6 +418,24 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                           final price = double.tryParse(value.trim());
                           if (price == null || price <= 0) {
                             return 'Enter a valid positive number.';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _phoneController,
+                        keyboardType: TextInputType.phone,
+                        textDirection: TextDirection.rtl,
+                        decoration: const InputDecoration(
+                          labelText: 'رقم الجوال',
+                          hintText: 'أدخل رقم التواصل مع السائق',
+                          prefixIcon: Icon(Icons.phone),
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'الرجاء إدخال رقم الجوال';
                           }
                           return null;
                         },
