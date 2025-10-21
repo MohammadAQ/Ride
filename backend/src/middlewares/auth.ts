@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import AppError from '../utils/appError.js';
-import { getFirebaseAuth } from '../config/firebase.js';
+import { firebaseAuth } from '../config/firebase.js';
 
 export const authenticate = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
   const header = req.headers.authorization;
@@ -12,7 +12,7 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
   const token = header.replace('Bearer ', '').trim();
 
   try {
-    const decoded = await getFirebaseAuth().verifyIdToken(token);
+    const decoded = await firebaseAuth.verifyIdToken(token);
 
     req.user = {
       uid: decoded.uid,

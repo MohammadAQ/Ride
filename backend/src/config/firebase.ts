@@ -1,29 +1,17 @@
 import admin from 'firebase-admin';
-import { env } from './env.js';
-import logger from '../utils/logger.js';
+import { config } from './env.js';
 
-let initialized = false;
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: config.firebase.projectId,
+      clientEmail: config.firebase.clientEmail,
+      privateKey: config.firebase.privateKey,
+    }),
+  });
+  console.log('🔥 Firebase Admin initialized');
+}
 
-const initializeFirebase = (): admin.app.App => {
-  if (!initialized) {
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: env.firebase.projectId,
-        clientEmail: env.firebase.clientEmail,
-        privateKey: env.firebase.privateKey,
-      }),
-    });
-    initialized = true;
-    logger.info('Firebase Admin initialized');
-  }
-
-  return admin.app();
-};
-
-export const getFirebaseAuth = (): admin.auth.Auth => {
-  return initializeFirebase().auth();
-};
-
-export const getFirestore = (): admin.firestore.Firestore => {
-  return initializeFirebase().firestore();
-};
+export const firebaseApp = admin.app();
+export const firebaseAuth = admin.auth();
+export const db = admin.firestore();
