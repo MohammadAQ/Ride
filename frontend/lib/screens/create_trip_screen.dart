@@ -1,7 +1,8 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import '../services/api_service.dart';
 
 class CreateTripScreen extends StatefulWidget {
   const CreateTripScreen({super.key, this.showAppBar = true});
@@ -34,6 +35,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   final TextEditingController _carModelController = TextEditingController();
   final TextEditingController _carColorController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final ApiService _apiService = ApiService();
 
   String? _fromCity;
   String? _toCity;
@@ -99,12 +101,9 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   }
 
   String _formatTime(TimeOfDay time) {
-    final MaterialLocalizations localizations = MaterialLocalizations.of(context);
-    final MediaQueryData mediaQuery = MediaQuery.of(context);
-    return localizations.formatTimeOfDay(
-      time,
-      alwaysUse24HourFormat: mediaQuery.alwaysUse24HourFormat,
-    );
+    final hours = time.hour.toString().padLeft(2, '0');
+    final minutes = time.minute.toString().padLeft(2, '0');
+    return '$hours:$minutes';
   }
 
   Future<void> _submit() async {
@@ -201,17 +200,15 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     });
 
     try {
-      await FirebaseFirestore.instance.collection('trips').add({
+      await _apiService.createTrip({
         'fromCity': fromCity,
         'toCity': toCity,
         'date': _formatDate(date),
         'time': _formatTime(time),
         'price': price,
-        'driverName': user.displayName ?? 'سائق بدون اسم',
         'carModel': carModel,
         'carColor': carColor,
         'phoneNumber': phoneNumber,
-        'createdAt': FieldValue.serverTimestamp(),
       });
 
       if (!context.mounted) return;
@@ -242,11 +239,19 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       if (widget.showAppBar) {
         Navigator.of(context).pop();
       }
-    } on FirebaseException catch (error) {
+    } on ApiException catch (error) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('فشل إنشاء الرحلة: ${error.message ?? 'خطأ غير معروف'}'),
+          content: Text('فشل إنشاء الرحلة: ${error.message}'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('فشل إنشاء الرحلة: حدث خطأ غير متوقع'),
           backgroundColor: Colors.redAccent,
         ),
       );
