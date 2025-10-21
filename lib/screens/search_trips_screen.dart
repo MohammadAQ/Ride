@@ -1,6 +1,6 @@
-import 'package:carpal_app/services/phone_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const List<String> westBankCities = [
   'رام الله',
@@ -68,6 +68,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     final fromCity = (data['from'] ?? '').toString();
     final toCity = (data['to'] ?? '').toString();
     final dateText = _formatDate(data['date']);
+    final timeText = (data['time'] ?? '').toString();
     final priceText = _formatPrice(data['price']);
     final notesValue = data['notes'];
     final notes = notesValue == null ? null : notesValue.toString().trim();
@@ -110,8 +111,12 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
             return;
           }
 
-          final canOpenDialer = await PhoneLauncher.launchDialer(sanitizedNumber);
-          if (!canOpenDialer) {
+          final Uri telUri = Uri.parse('tel:$sanitizedNumber');
+          final bool launched = await launchUrl(
+            telUri,
+            mode: LaunchMode.externalApplication,
+          );
+          if (!launched) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('تعذّر فتح تطبيق الاتصال.'),
@@ -121,7 +126,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
         }
 
         Widget buildDetailRow({
-          required String icon,
+          required Widget leading,
           required String label,
           required String value,
           bool isLink = false,
@@ -131,10 +136,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
           final rowContent = Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(
-                icon,
-                style: theme.textTheme.titleLarge,
-              ),
+              leading,
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -200,43 +202,73 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                 ),
                 const SizedBox(height: 20),
                 buildDetailRow(
-                  icon: '🚗',
+                  leading: Text(
+                    '🚗',
+                    style: theme.textTheme.titleLarge,
+                  ),
                   label: 'من → إلى',
                   value: '$fromCity → $toCity',
                 ),
                 const SizedBox(height: 16),
                 buildDetailRow(
-                  icon: '📅',
+                  leading: Text(
+                    '📅',
+                    style: theme.textTheme.titleLarge,
+                  ),
                   label: 'التاريخ',
                   value: dateText,
                 ),
                 const SizedBox(height: 16),
                 buildDetailRow(
-                  icon: '💰',
+                  leading: Icon(
+                    Icons.schedule,
+                    color: colorScheme.primary,
+                  ),
+                  label: 'الوقت',
+                  value: timeText,
+                ),
+                const SizedBox(height: 16),
+                buildDetailRow(
+                  leading: Text(
+                    '💰',
+                    style: theme.textTheme.titleLarge,
+                  ),
                   label: 'السعر',
                   value: priceText,
                 ),
                 const SizedBox(height: 16),
                 buildDetailRow(
-                  icon: '👤',
+                  leading: Text(
+                    '👤',
+                    style: theme.textTheme.titleLarge,
+                  ),
                   label: 'اسم السائق',
                   value: driverName,
                 ),
                 const SizedBox(height: 16),
                 buildDetailRow(
-                  icon: '🚙',
+                  leading: Text(
+                    '🚙',
+                    style: theme.textTheme.titleLarge,
+                  ),
                   label: 'موديل السيارة',
                   value: carModel,
                 ),
                 const SizedBox(height: 16),
                 buildDetailRow(
-                  icon: '🎨',
+                  leading: Text(
+                    '🎨',
+                    style: theme.textTheme.titleLarge,
+                  ),
                   label: 'لون السيارة',
                   value: carColor,
                 ),
                 const SizedBox(height: 16),
                 buildDetailRow(
-                  icon: '📞',
+                  leading: Icon(
+                    Icons.phone,
+                    color: colorScheme.primary,
+                  ),
                   label: 'رقم الهاتف',
                   value: phoneNumber,
                   isLink: true,
@@ -245,7 +277,10 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                 if (notes != null && notes.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   buildDetailRow(
-                    icon: '📝',
+                    leading: Text(
+                      '📝',
+                      style: theme.textTheme.titleLarge,
+                    ),
                     label: 'ملاحظات',
                     value: notes,
                   ),
