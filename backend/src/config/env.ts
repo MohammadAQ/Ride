@@ -1,68 +1,68 @@
-import { config } from 'dotenv';
-import { z } from 'zod';
+import dotenv from 'dotenv';
 
-config();
+dotenv.config();
 
-const envSchema = z.object({
-  NODE_ENV: z
-    .enum(['development', 'test', 'production'])
-    .default('development'),
-  PORT: z.coerce.number().int().positive().default(8080),
-  CORS_ORIGINS: z.string().optional(),
-  FIREBASE_PROJECT_ID: z
-    .string()
-    .min(1, 'FIREBASE_PROJECT_ID is required'),
-  FIREBASE_CLIENT_EMAIL: z
-    .string()
-    .email('FIREBASE_CLIENT_EMAIL must be a valid email'),
-  FIREBASE_PRIVATE_KEY: z
-    .string()
-    .min(1, 'FIREBASE_PRIVATE_KEY is required'),
-});
+const requiredVars = [
+  'PORT',
+  'FIREBASE_PROJECT_ID',
+  'FIREBASE_CLIENT_EMAIL',
+  'FIREBASE_PRIVATE_KEY',
+] as const;
 
-type EnvSchema = z.infer<typeof envSchema>;
+const isMissing = (value: string | undefined) => value === undefined || value.trim().length === 0;
 
-const rawEnv = Object.fromEntries(
-  Object.entries(process.env).map(([key, value]) => [key, value ?? undefined]),
-);
+const missingVars = requiredVars.filter((variable) => isMissing(process.env[variable]));
 
-const parsedEnv = envSchema.safeParse(rawEnv);
-
-if (!parsedEnv.success) {
-  const { fieldErrors, formErrors } = parsedEnv.error.flatten();
-  const messages = [
-    'Invalid environment configuration detected.',
-    ...formErrors,
-    ...Object.entries(fieldErrors)
-      .filter(([, errors]) => errors && errors.length > 0)
-      .map(([field, errors]) => `${field}: ${errors?.join(', ')}`),
-  ].filter(Boolean);
-
-  throw new Error(messages.join('\n - '));
+if (missingVars.length > 0) {
+  console.error('❌ Missing required environment variables:');
+  for (const variable of missingVars) {
+    console.error(` - ${variable}`);
+  }
+  console.error('\nPlease update your .env file. See .env.example for reference.');
+  process.exit(1);
 }
 
-const { CORS_ORIGINS, FIREBASE_PRIVATE_KEY, ...rest } = parsedEnv.data;
+console.log('✅ Environment variables loaded successfully');
 
-const corsOrigins = (CORS_ORIGINS ?? '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter((origin) => origin.length > 0);
+const toNumber = (value: string | undefined, fallback: number): number => {
+  if (!value) {
+    return fallback;
+  }
 
-export const env: EnvSchema & {
+  const parsed = Number(value);
+
+  return Number.isNaN(parsed) ? fallback : parsed;
+};
+
+const parseCorsOrigins = (origins: string | undefined): string[] => {
+  if (!origins) {
+    return [];
+  }
+
+  return origins
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+};
+
+export interface FirebaseConfig {
+  projectId: string;
+  clientEmail: string;
+  privateKey: string;
+}
+
+export interface AppConfig {
+  port: number;
   corsOrigins: string[];
+  firebase: FirebaseConfig;
+}
+
+export const config: AppConfig = {
+  port: toNumber(process.env.PORT, 8080),
+  corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS),
   firebase: {
-    projectId: string;
-    clientEmail: string;
-    privateKey: string;
-  };
-} = {
-  ...rest,
-  CORS_ORIGINS,
-  FIREBASE_PRIVATE_KEY,
-  corsOrigins,
-  firebase: {
-    projectId: rest.FIREBASE_PROJECT_ID,
-    clientEmail: rest.FIREBASE_CLIENT_EMAIL,
-    privateKey: FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    projectId: process.env.FIREBASE_PROJECT_ID as string,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL as string,
+    privateKey: (process.env.FIREBASE_PRIVATE_KEY as string).replace(/\\n/g, '\n'),
   },
 };

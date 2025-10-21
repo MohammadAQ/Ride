@@ -1,5 +1,5 @@
 import { Timestamp } from 'firebase-admin/firestore';
-import { getFirestore } from '../config/firebase.js';
+import { db } from '../config/firebase.js';
 import AppError from '../utils/appError.js';
 import type { CreateTripInput, UpdateTripInput } from '../schemas/trips.schema.js';
 
@@ -28,7 +28,7 @@ interface ListTripsOptions {
   cursor?: string;
 }
 
-const collection = () => getFirestore().collection('trips');
+const collection = () => db.collection('trips');
 
 const serializeTrip = (doc: FirebaseFirestore.DocumentSnapshot): Trip => {
   const data = doc.data();
