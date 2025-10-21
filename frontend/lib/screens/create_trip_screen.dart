@@ -5,9 +5,16 @@ import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 
 class CreateTripScreen extends StatefulWidget {
-  const CreateTripScreen({super.key, this.showAppBar = true});
+  const CreateTripScreen({
+    super.key,
+    this.showAppBar = true,
+    this.initialTripData,
+  });
 
   final bool showAppBar;
+  final Map<String, dynamic>? initialTripData;
+
+  bool get isEditing => initialTripData != null;
 
   @override
   State<CreateTripScreen> createState() => _CreateTripScreenState();
@@ -37,11 +44,24 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   final TextEditingController _phoneController = TextEditingController();
   final ApiService _apiService = ApiService();
 
+  late final List<String> _cityOptions;
+  late final bool _isEditing;
+  String? _tripId;
   String? _fromCity;
   String? _toCity;
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
   bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _cityOptions = List<String>.from(_cities);
+    _isEditing = widget.isEditing;
+    if (_isEditing && widget.initialTripData != null) {
+      _initialiseFromTrip(widget.initialTripData!);
+    }
+  }
 
   @override
   void dispose() {
@@ -91,6 +111,100 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
         _timeController.text = _formatTime(pickedTime);
       });
     }
+  }
+
+  void _initialiseFromTrip(Map<String, dynamic> trip) {
+    _tripId = _stringOrNull(trip['id']);
+
+    final fromCity = _stringOrNull(trip['fromCity']);
+    if (fromCity != null) {
+      if (!_cityOptions.contains(fromCity)) {
+        _cityOptions.add(fromCity);
+      }
+      _fromCity = fromCity;
+    }
+
+    final toCity = _stringOrNull(trip['toCity']);
+    if (toCity != null) {
+      if (!_cityOptions.contains(toCity)) {
+        _cityOptions.add(toCity);
+      }
+      _toCity = toCity;
+    }
+
+    final dateString = _stringOrNull(trip['date']);
+    if (dateString != null) {
+      final parsedDate = DateTime.tryParse(dateString);
+      if (parsedDate != null) {
+        _selectedDate = parsedDate;
+        _dateController.text = _formatDate(parsedDate);
+      } else {
+        _dateController.text = dateString;
+      }
+    }
+
+    final timeString = _stringOrNull(trip['time']);
+    if (timeString != null) {
+      final parsedTime = _parseTimeOfDay(timeString);
+      if (parsedTime != null) {
+        _selectedTime = parsedTime;
+        _timeController.text = _formatTime(parsedTime);
+      } else {
+        _timeController.text = timeString;
+      }
+    }
+
+    final priceValue = trip['price'];
+    if (priceValue is num) {
+      final formatted = priceValue % 1 == 0
+          ? priceValue.toStringAsFixed(0)
+          : priceValue.toStringAsFixed(2);
+      _priceController.text = formatted;
+    } else {
+      final priceString = _stringOrNull(priceValue);
+      if (priceString != null) {
+        _priceController.text = priceString;
+      }
+    }
+
+    final carModel = _stringOrNull(trip['carModel']);
+    if (carModel != null) {
+      _carModelController.text = carModel;
+    }
+
+    final carColor = _stringOrNull(trip['carColor']);
+    if (carColor != null) {
+      _carColorController.text = carColor;
+    }
+
+    final phoneNumber = _stringOrNull(trip['phoneNumber']);
+    if (phoneNumber != null) {
+      _phoneController.text = phoneNumber;
+    }
+  }
+
+  String? _stringOrNull(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+    final result = value.toString().trim();
+    if (result.isEmpty) {
+      return null;
+    }
+    return result;
+  }
+
+  TimeOfDay? _parseTimeOfDay(String value) {
+    final parts = value.split(':');
+    if (parts.length < 2) {
+      return null;
+    }
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) {
+      return null;
+    }
+    return TimeOfDay(hour: hour.clamp(0, 23), minute: minute.clamp(0, 59));
   }
 
   String _formatDate(DateTime date) {
@@ -199,59 +313,94 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       _isSubmitting = true;
     });
 
+    final payload = <String, dynamic>{
+      'fromCity': fromCity,
+      'toCity': toCity,
+      'date': _formatDate(date),
+      'time': _formatTime(time),
+      'price': price,
+      'carModel': carModel,
+      'carColor': carColor,
+      'phoneNumber': phoneNumber,
+    };
+
     try {
-      await _apiService.createTrip({
-        'fromCity': fromCity,
-        'toCity': toCity,
-        'date': _formatDate(date),
-        'time': _formatTime(time),
-        'price': price,
-        'carModel': carModel,
-        'carColor': carColor,
-        'phoneNumber': phoneNumber,
-      });
+      if (_isEditing) {
+        final tripId = _tripId;
+        if (tripId == null || tripId.isEmpty) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تعذر تحديد الرحلة لتعديلها. حاول مرة أخرى.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+          return;
+        }
 
-      if (!context.mounted) return;
+        final updatedTrip = await _apiService.updateTrip(tripId, payload);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم إنشاء الرحلة بنجاح ✅'),
-        ),
-      );
+        if (!context.mounted) return;
 
-      currentState.reset();
-      setState(() {
-        _fromCity = null;
-        _toCity = null;
-        _selectedDate = null;
-        _selectedTime = null;
-      });
-      _dateController.clear();
-      _timeController.clear();
-      _priceController.clear();
-      _carModelController.clear();
-      _carColorController.clear();
-      _phoneController.clear();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم حفظ التعديلات بنجاح'),
+          ),
+        );
 
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-      if (!context.mounted) return;
+        Navigator.of(context).pop(updatedTrip);
+      } else {
+        await _apiService.createTrip(payload);
 
-      if (widget.showAppBar) {
-        Navigator.of(context).pop();
+        if (!context.mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم إنشاء الرحلة بنجاح ✅'),
+          ),
+        );
+
+        currentState.reset();
+        setState(() {
+          _fromCity = null;
+          _toCity = null;
+          _selectedDate = null;
+          _selectedTime = null;
+        });
+        _dateController.clear();
+        _timeController.clear();
+        _priceController.clear();
+        _carModelController.clear();
+        _carColorController.clear();
+        _phoneController.clear();
+
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        if (!context.mounted) return;
+
+        if (widget.showAppBar) {
+          Navigator.of(context).pop();
+        }
       }
     } on ApiException catch (error) {
       if (!context.mounted) return;
+      final message = _isEditing
+          ? 'فشل حفظ التعديلات: ${error.message}'
+          : 'فشل إنشاء الرحلة: ${error.message}';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('فشل إنشاء الرحلة: ${error.message}'),
+          content: Text(message),
           backgroundColor: Colors.redAccent,
         ),
       );
-    } catch (error) {
+    } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('فشل إنشاء الرحلة: حدث خطأ غير متوقع'),
+        SnackBar(
+          content: Text(
+            _isEditing
+                ? 'فشل حفظ التعديلات: حدث خطأ غير متوقع'
+                : 'فشل إنشاء الرحلة: حدث خطأ غير متوقع',
+          ),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -288,7 +437,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          'إنشاء رحلة جديدة',
+                          _isEditing ? 'تعديل الرحلة' : 'إنشاء رحلة جديدة',
                           textAlign: TextAlign.right,
                           style: theme.textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.w600,
@@ -296,7 +445,9 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'املأ جميع تفاصيل الرحلة ليتمكن الركاب من الانضمام بسهولة.',
+                          _isEditing
+                              ? 'قم بتحديث تفاصيل رحلتك الحالية.'
+                              : 'املأ جميع تفاصيل الرحلة ليتمكن الركاب من الانضمام بسهولة.',
                           textAlign: TextAlign.right,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: colorScheme.onSurfaceVariant,
@@ -306,7 +457,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                         DropdownButtonFormField<String>(
                           value: _fromCity,
                           isExpanded: true,
-                          items: _cities
+                          items: _cityOptions
                               .map(
                                 (city) => DropdownMenuItem<String>(
                                   value: city,
@@ -342,7 +493,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                         DropdownButtonFormField<String>(
                           value: _toCity,
                           isExpanded: true,
-                          items: _cities
+                          items: _cityOptions
                               .map(
                                 (city) => DropdownMenuItem<String>(
                                   value: city,
@@ -526,9 +677,24 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                                   height: 20,
                                   child: CircularProgressIndicator(strokeWidth: 2),
                                 )
-                              : const Icon(Icons.check_circle_outline),
-                          label: Text(_isSubmitting ? 'جاري إنشاء الرحلة...' : 'إنشاء الرحلة'),
+                              : Icon(_isEditing ? Icons.save_outlined : Icons.check_circle_outline),
+                          label: Text(
+                            _isSubmitting
+                                ? (_isEditing ? 'جاري حفظ التعديلات...' : 'جاري إنشاء الرحلة...')
+                                : (_isEditing ? 'حفظ التعديلات' : 'إنشاء الرحلة'),
+                          ),
                         ),
+                        if (_isEditing) ...[
+                          const SizedBox(height: 12),
+                          TextButton(
+                            onPressed: _isSubmitting
+                                ? null
+                                : () {
+                                    Navigator.of(context).maybePop();
+                                  },
+                            child: const Text('إلغاء'),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -551,7 +717,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('إنشاء رحلة'),
+        title: Text(_isEditing ? 'تعديل الرحلة' : 'إنشاء رحلة'),
       ),
       body: _buildBody(),
     );
