@@ -35,7 +35,7 @@ export const getTripsHandler = async (req: Request, res: Response): Promise<void
     cursor: typeof cursor === 'string' ? cursor : undefined,
   });
 
-  res.json({ data: trips, nextCursor });
+  res.json({ trips, nextCursor: nextCursor ?? null });
 };
 
 export const getMyTripsHandler = async (req: Request, res: Response): Promise<void> => {
@@ -51,7 +51,7 @@ export const getMyTripsHandler = async (req: Request, res: Response): Promise<vo
     cursor: typeof cursor === 'string' ? cursor : undefined,
   });
 
-  res.json({ data: trips, nextCursor });
+  res.json({ trips, nextCursor: nextCursor ?? null });
 };
 
 export const createTripHandler = async (req: Request, res: Response): Promise<void> => {
@@ -62,7 +62,7 @@ export const createTripHandler = async (req: Request, res: Response): Promise<vo
   const payload = CreateTripSchema.parse(req.body);
   const trip = await createTrip(payload, { id: req.user.uid, name: req.user.name });
 
-  res.status(201).json(trip);
+  res.status(201).json({ message: 'Trip created successfully', trip });
 };
 
 export const updateTripHandler = async (req: Request, res: Response): Promise<void> => {
