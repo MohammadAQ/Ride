@@ -1,5 +1,6 @@
+import { randomUUID } from 'crypto';
 import { Timestamp } from 'firebase-admin/firestore';
-import { db } from '../config/firebase.js';
+import { db, isUsingMockFirebase } from '../config/firebase.js';
 import AppError from '../utils/appError.js';
 import type { CreateTripInput, UpdateTripInput } from '../schemas/trips.schema.js';
 
@@ -28,7 +29,13 @@ interface ListTripsOptions {
   cursor?: string;
 }
 
-const collection = () => db.collection('trips');
+const collection = () => {
+  if (!db) {
+    throw new AppError('The trips store is not configured.', 500);
+  }
+
+  return db.collection('trips');
+};
 
 const serializeTrip = (doc: FirebaseFirestore.DocumentSnapshot): Trip => {
   const data = doc.data();
@@ -91,13 +98,58 @@ const applyFilters = async ({ fromCity, toCity, driverId, cursor, limit }: ListT
   return { trips, nextCursor };
 };
 
-export const listTrips = async (options: Omit<ListTripsOptions, 'driverId'>) =>
-  applyFilters({ ...options, driverId: undefined });
+const listTripsInMemory = ({ fromCity, toCity, driverId, limit, cursor }: ListTripsOptions) => {
+  const sorted = inMemoryTrips
+    .filter((trip) => (fromCity ? trip.fromCity === fromCity : true))
+    .filter((trip) => (toCity ? trip.toCity === toCity : true))
+    .filter((trip) => (driverId ? trip.driverId === driverId : true))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-export const listTripsByDriver = async (driverId: string, options: Omit<ListTripsOptions, 'driverId'>) =>
-  applyFilters({ ...options, driverId });
+  if (cursor) {
+    const cursorIndex = sorted.findIndex((trip) => trip.id === cursor);
 
-export const createTrip = async (
+    if (cursorIndex === -1) {
+      throw new AppError('Invalid cursor provided', 400);
+    }
+
+    return paginate(sorted.slice(cursorIndex + 1), limit);
+  }
+
+  return paginate(sorted, limit);
+};
+
+const paginate = (items: Trip[], limit: number) => {
+  const page = items.slice(0, limit).map((trip) => ({ ...trip }));
+  const nextCursor = page.length === limit ? page[page.length - 1].id : undefined;
+
+  return { trips: page, nextCursor };
+};
+
+const inMemoryTrips: Trip[] = [];
+
+const listTripsFirestore = (options: Omit<ListTripsOptions, 'driverId'> & { driverId?: string }) =>
+  applyFilters(options);
+
+const createTripInMemory = (
+  payload: CreateTripInput,
+  driver: { id: string; name?: string | null },
+): Trip => {
+  const now = new Date().toISOString();
+  const trip: Trip = {
+    id: randomUUID(),
+    driverId: driver.id,
+    driverName: driver.name ?? '',
+    ...payload,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  inMemoryTrips.unshift(trip);
+
+  return { ...trip };
+};
+
+const createTripFirestore = async (
   payload: CreateTripInput,
   driver: { id: string; name?: string | null },
 ): Promise<Trip> => {
@@ -116,11 +168,31 @@ export const createTrip = async (
   return serializeTrip(await docRef.get());
 };
 
-export const updateTrip = async (
-  id: string,
-  updates: UpdateTripInput,
-  driverId: string,
-): Promise<Trip> => {
+const updateTripInMemory = (id: string, updates: UpdateTripInput, driverId: string): Trip => {
+  const index = inMemoryTrips.findIndex((trip) => trip.id === id);
+
+  if (index === -1) {
+    throw new AppError('Trip not found', 404);
+  }
+
+  const existing = inMemoryTrips[index];
+
+  if (existing.driverId !== driverId) {
+    throw new AppError('You are not allowed to modify this trip', 403);
+  }
+
+  const updated: Trip = {
+    ...existing,
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+
+  inMemoryTrips[index] = updated;
+
+  return { ...updated };
+};
+
+const updateTripFirestore = async (id: string, updates: UpdateTripInput, driverId: string): Promise<Trip> => {
   const docRef = collection().doc(id);
   const snapshot = await docRef.get();
 
@@ -148,7 +220,21 @@ export const updateTrip = async (
   return serializeTrip(await docRef.get());
 };
 
-export const deleteTrip = async (id: string, driverId: string): Promise<void> => {
+const deleteTripInMemory = (id: string, driverId: string) => {
+  const index = inMemoryTrips.findIndex((trip) => trip.id === id);
+
+  if (index === -1) {
+    throw new AppError('Trip not found', 404);
+  }
+
+  if (inMemoryTrips[index].driverId !== driverId) {
+    throw new AppError('You are not allowed to delete this trip', 403);
+  }
+
+  inMemoryTrips.splice(index, 1);
+};
+
+const deleteTripFirestore = async (id: string, driverId: string): Promise<void> => {
   const docRef = collection().doc(id);
   const snapshot = await docRef.get();
 
@@ -168,3 +254,29 @@ export const deleteTrip = async (id: string, driverId: string): Promise<void> =>
 
   await docRef.delete();
 };
+
+export const listTrips = async (options: Omit<ListTripsOptions, 'driverId'>) =>
+  isUsingMockFirebase
+    ? listTripsInMemory({ ...options, driverId: undefined })
+    : listTripsFirestore({ ...options, driverId: undefined });
+
+export const listTripsByDriver = async (driverId: string, options: Omit<ListTripsOptions, 'driverId'>) =>
+  isUsingMockFirebase
+    ? listTripsInMemory({ ...options, driverId })
+    : listTripsFirestore({ ...options, driverId });
+
+export const createTrip = async (
+  payload: CreateTripInput,
+  driver: { id: string; name?: string | null },
+): Promise<Trip> =>
+  (isUsingMockFirebase ? createTripInMemory(payload, driver) : createTripFirestore(payload, driver));
+
+export const updateTrip = async (
+  id: string,
+  updates: UpdateTripInput,
+  driverId: string,
+): Promise<Trip> =>
+  (isUsingMockFirebase ? updateTripInMemory(id, updates, driverId) : updateTripFirestore(id, updates, driverId));
+
+export const deleteTrip = async (id: string, driverId: string): Promise<void> =>
+  (isUsingMockFirebase ? deleteTripInMemory(id, driverId) : deleteTripFirestore(id, driverId));
