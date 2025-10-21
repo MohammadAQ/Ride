@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:carpal_app/screens/create_trip_screen.dart';
+import 'package:carpal_app/screens/my_trips_screen.dart';
 import 'package:carpal_app/screens/profile_screen.dart';
 import 'package:carpal_app/screens/search_trips_screen.dart';
 
@@ -17,6 +18,10 @@ class _MainScreenState extends State<MainScreen> {
     _Destination(
       title: 'Search Trips',
       page: SearchTripsScreen(showAppBar: false),
+    ),
+    _Destination(
+      title: 'My Trips',
+      page: MyTripsScreen(showAppBar: false),
     ),
     _Destination(
       title: 'Create Trip',
@@ -52,6 +57,10 @@ class _MainScreenState extends State<MainScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.search),
             label: 'Search Trips',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.directions_car_filled),
+            label: 'My Trips',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.add_circle_outline),
