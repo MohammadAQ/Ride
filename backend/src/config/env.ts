@@ -4,20 +4,41 @@ import { z } from 'zod';
 config();
 
 const envSchema = z.object({
-  NODE_ENV: z.string().default('development'),
+  NODE_ENV: z
+    .enum(['development', 'test', 'production'])
+    .default('development'),
   PORT: z.coerce.number().int().positive().default(8080),
   CORS_ORIGINS: z.string().optional(),
-  FIREBASE_PROJECT_ID: z.string().min(1, 'FIREBASE_PROJECT_ID is required'),
-  FIREBASE_CLIENT_EMAIL: z.string().email('FIREBASE_CLIENT_EMAIL must be a valid email'),
-  FIREBASE_PRIVATE_KEY: z.string().min(1, 'FIREBASE_PRIVATE_KEY is required'),
+  FIREBASE_PROJECT_ID: z
+    .string()
+    .min(1, 'FIREBASE_PROJECT_ID is required'),
+  FIREBASE_CLIENT_EMAIL: z
+    .string()
+    .email('FIREBASE_CLIENT_EMAIL must be a valid email'),
+  FIREBASE_PRIVATE_KEY: z
+    .string()
+    .min(1, 'FIREBASE_PRIVATE_KEY is required'),
 });
 
 type EnvSchema = z.infer<typeof envSchema>;
 
-const parsedEnv = envSchema.safeParse(process.env);
+const rawEnv = Object.fromEntries(
+  Object.entries(process.env).map(([key, value]) => [key, value ?? undefined]),
+);
+
+const parsedEnv = envSchema.safeParse(rawEnv);
 
 if (!parsedEnv.success) {
-  throw new Error(`Invalid environment configuration: ${parsedEnv.error.message}`);
+  const { fieldErrors, formErrors } = parsedEnv.error.flatten();
+  const messages = [
+    'Invalid environment configuration detected.',
+    ...formErrors,
+    ...Object.entries(fieldErrors)
+      .filter(([, errors]) => errors && errors.length > 0)
+      .map(([field, errors]) => `${field}: ${errors?.join(', ')}`),
+  ].filter(Boolean);
+
+  throw new Error(messages.join('\n - '));
 }
 
 const { CORS_ORIGINS, FIREBASE_PRIVATE_KEY, ...rest } = parsedEnv.data;
