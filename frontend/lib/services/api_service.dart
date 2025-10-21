@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
 class ApiException implements Exception {
-  ApiException(this.statusCode, this.message);
+  const ApiException(this.statusCode, this.message);
 
   final int statusCode;
   final String message;
