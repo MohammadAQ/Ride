@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class CreateTripScreen extends StatefulWidget {
   const CreateTripScreen({super.key, this.showAppBar = true});
@@ -30,8 +31,9 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   final TextEditingController _dateController = TextEditingController();
   final TextEditingController _timeController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
+  final TextEditingController _carModelController = TextEditingController();
+  final TextEditingController _carColorController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _notesController = TextEditingController();
 
   String? _fromCity;
   String? _toCity;
@@ -44,8 +46,9 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     _dateController.dispose();
     _timeController.dispose();
     _priceController.dispose();
+    _carModelController.dispose();
+    _carColorController.dispose();
     _phoneController.dispose();
-    _notesController.dispose();
     super.dispose();
   }
 
@@ -121,7 +124,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('You must be logged in to create a trip.'),
+          content: Text('يجب تسجيل الدخول لإنشاء رحلة.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -133,7 +136,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please choose a valid date.'),
+          content: Text('يرجى اختيار تاريخ صالح للرحلة.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -145,7 +148,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please choose a valid time.'),
+          content: Text('يرجى اختيار وقت صالح للرحلة.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -154,25 +157,17 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
     final String? fromCity = _fromCity;
     final String? toCity = _toCity;
-    final double? price = double.tryParse(_priceController.text.trim());
+    final double? price =
+        double.tryParse(_priceController.text.trim().replaceAll(',', '.'));
+    final String carModel = _carModelController.text.trim();
+    final String carColor = _carColorController.text.trim();
     final String phoneNumber = _phoneController.text.trim();
     if (price == null) {
       // Should not happen because validator already checks this, but guard anyway.
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter a valid numeric price.'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-      return;
-    }
-
-    if (phoneNumber.isEmpty) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please provide a valid phone number.'),
+          content: Text('يرجى إدخال سعر صالح.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -183,7 +178,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please select both departure and destination cities.'),
+          content: Text('يرجى اختيار مدينتي الانطلاق والوصول.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -194,7 +189,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Departure and destination must be different.'),
+          content: Text('يجب أن تكون مدينتا الانطلاق والوصول مختلفتين.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -206,24 +201,16 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     });
 
     try {
-      final String notes = _notesController.text.trim();
-      final DateTime departureDateTime = DateTime(
-        date.year,
-        date.month,
-        date.day,
-        time.hour,
-        time.minute,
-      );
-
       await FirebaseFirestore.instance.collection('trips').add({
-        'from': fromCity,
-        'to': toCity,
-        'date': Timestamp.fromDate(departureDateTime),
-        'price': price,
+        'fromCity': fromCity,
+        'toCity': toCity,
+        'date': _formatDate(date),
         'time': _formatTime(time),
+        'price': price,
+        'driverName': user.displayName ?? 'سائق بدون اسم',
+        'carModel': carModel,
+        'carColor': carColor,
         'phoneNumber': phoneNumber,
-        if (notes.isNotEmpty) 'notes': notes,
-        'driverId': user.uid,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -231,7 +218,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Trip created successfully!'),
+          content: Text('تم إنشاء الرحلة بنجاح ✅'),
         ),
       );
 
@@ -245,8 +232,9 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       _dateController.clear();
       _timeController.clear();
       _priceController.clear();
+      _carModelController.clear();
+      _carColorController.clear();
       _phoneController.clear();
-      _notesController.clear();
 
       await Future<void>.delayed(const Duration(milliseconds: 300));
       if (!context.mounted) return;
@@ -258,7 +246,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to create trip: ${error.message ?? 'Unknown error'}'),
+          content: Text('فشل إنشاء الرحلة: ${error.message ?? 'خطأ غير معروف'}'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -286,183 +274,258 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
               surfaceTintColor: colorScheme.surfaceTint,
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Create a New Trip',
-                        textAlign: TextAlign.start,
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
+                child: Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'إنشاء رحلة جديدة',
+                          textAlign: TextAlign.right,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Fill in the details below to share your trip with riders.',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                        const SizedBox(height: 12),
+                        Text(
+                          'املأ جميع تفاصيل الرحلة ليتمكن الركاب من الانضمام بسهولة.',
+                          textAlign: TextAlign.right,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 24),
-                      DropdownButtonFormField<String>(
-                        value: _fromCity,
-                        items: _cities
-                            .map(
-                              (city) => DropdownMenuItem<String>(
-                                value: city,
-                                child: Text(city),
-                              ),
-                            )
-                            .toList(),
-                        decoration: const InputDecoration(
-                          labelText: 'From (Departure City)',
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (value) {
-                          setState(() {
-                            _fromCity = value;
-                          });
-                        },
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please select a departure city.';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: _toCity,
-                        items: _cities
-                            .map(
-                              (city) => DropdownMenuItem<String>(
-                                value: city,
-                                child: Text(city),
-                              ),
-                            )
-                            .toList(),
-                        decoration: const InputDecoration(
-                          labelText: 'To (Destination City)',
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (value) {
-                          setState(() {
-                            _toCity = value;
-                          });
-                        },
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please select a destination city.';
-                          }
-                          if (value == _fromCity) {
-                            return 'Departure and destination must be different.';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _dateController,
-                        readOnly: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Date',
-                          hintText: 'Select trip date',
-                          prefixIcon: Icon(Icons.calendar_today),
-                          border: OutlineInputBorder(),
-                        ),
-                        onTap: _pickDate,
-                        validator: (value) {
-                          if (_selectedDate == null) {
-                            return 'Please choose a valid date.';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _timeController,
-                        readOnly: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Time',
-                          hintText: 'Select trip time',
-                          prefixIcon: Icon(Icons.access_time),
-                          border: OutlineInputBorder(),
-                        ),
-                        onTap: _pickTime,
-                        validator: (value) {
-                          if (_selectedTime == null) {
-                            return 'Please choose a valid time.';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _priceController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Price',
-                          hintText: 'Enter trip price',
-                          prefixIcon: Icon(Icons.attach_money),
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter a price.';
-                          }
-                          final price = double.tryParse(value.trim());
-                          if (price == null || price <= 0) {
-                            return 'Enter a valid positive number.';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _phoneController,
-                        keyboardType: TextInputType.phone,
-                        textDirection: TextDirection.rtl,
-                        decoration: const InputDecoration(
-                          labelText: 'رقم الجوال',
-                          hintText: 'أدخل رقم التواصل مع السائق',
-                          prefixIcon: Icon(Icons.phone),
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'الرجاء إدخال رقم الجوال';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _notesController,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Notes (Optional)',
-                          alignLabelWithHint: true,
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      FilledButton.icon(
-                        onPressed: _isSubmitting ? null : _submit,
-                        icon: _isSubmitting
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                        const SizedBox(height: 24),
+                        DropdownButtonFormField<String>(
+                          value: _fromCity,
+                          isExpanded: true,
+                          items: _cities
+                              .map(
+                                (city) => DropdownMenuItem<String>(
+                                  value: city,
+                                  child: Align(
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: Text(city),
+                                  ),
+                                ),
                               )
-                            : const Icon(Icons.add_circle_outline),
-                        label: Text(_isSubmitting ? 'Creating Trip...' : 'Create Trip'),
-                      ),
-                    ],
+                              .toList(),
+                          decoration: const InputDecoration(
+                            labelText: 'مدينة الانطلاق',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Padding(
+                              padding: EdgeInsetsDirectional.only(start: 12, end: 8),
+                              child: Text('🧭'),
+                            ),
+                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                          ),
+                          onChanged: (value) {
+                            setState(() {
+                              _fromCity = value;
+                            });
+                          },
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'يرجى اختيار مدينة الانطلاق';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          value: _toCity,
+                          isExpanded: true,
+                          items: _cities
+                              .map(
+                                (city) => DropdownMenuItem<String>(
+                                  value: city,
+                                  child: Align(
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: Text(city),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          decoration: const InputDecoration(
+                            labelText: 'مدينة الوصول',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Padding(
+                              padding: EdgeInsetsDirectional.only(start: 12, end: 8),
+                              child: Text('📍'),
+                            ),
+                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                          ),
+                          onChanged: (value) {
+                            setState(() {
+                              _toCity = value;
+                            });
+                          },
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'يرجى اختيار مدينة الوصول';
+                            }
+                            if (value == _fromCity) {
+                              return 'يجب أن تكون مدينة الوصول مختلفة عن مدينة الانطلاق';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _dateController,
+                          readOnly: true,
+                          decoration: const InputDecoration(
+                            labelText: 'التاريخ',
+                            hintText: 'اختر تاريخ الرحلة',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Padding(
+                              padding: EdgeInsetsDirectional.only(start: 12, end: 8),
+                              child: Text('📅'),
+                            ),
+                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                          ),
+                          onTap: _pickDate,
+                          validator: (value) {
+                            if (_selectedDate == null) {
+                              return 'يرجى اختيار تاريخ الرحلة';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _timeController,
+                          readOnly: true,
+                          decoration: const InputDecoration(
+                            labelText: 'الوقت',
+                            hintText: 'اختر وقت الرحلة',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Padding(
+                              padding: EdgeInsetsDirectional.only(start: 12, end: 8),
+                              child: Text('🕐'),
+                            ),
+                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                          ),
+                          onTap: _pickTime,
+                          validator: (value) {
+                            if (_selectedTime == null) {
+                              return 'يرجى اختيار وقت الرحلة';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _priceController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          inputFormatters: <TextInputFormatter>[
+                            FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                          ],
+                          decoration: const InputDecoration(
+                            labelText: 'السعر',
+                            hintText: 'أدخل سعر الرحلة',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Padding(
+                              padding: EdgeInsetsDirectional.only(start: 12, end: 8),
+                              child: Text('💰'),
+                            ),
+                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'يرجى إدخال السعر';
+                            }
+                            final price = double.tryParse(value.trim().replaceAll(',', '.'));
+                            if (price == null || price <= 0) {
+                              return 'أدخل رقمًا صحيحًا أكبر من صفر';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _carModelController,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'طراز السيارة',
+                            hintText: 'مثال: Kia Sportage 2021',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Padding(
+                              padding: EdgeInsetsDirectional.only(start: 12, end: 8),
+                              child: Text('🚗'),
+                            ),
+                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'يرجى إدخال طراز السيارة';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _carColorController,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'لون السيارة',
+                            hintText: 'مثال: أسود',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Padding(
+                              padding: EdgeInsetsDirectional.only(start: 12, end: 8),
+                              child: Text('🎨'),
+                            ),
+                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'يرجى إدخال لون السيارة';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          decoration: const InputDecoration(
+                            labelText: 'رقم الجوال',
+                            hintText: 'أدخل رقم التواصل مع السائق',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Padding(
+                              padding: EdgeInsetsDirectional.only(start: 12, end: 8),
+                              child: Text('📞'),
+                            ),
+                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'الرجاء إدخال رقم الجوال';
+                            }
+                            if (value.trim().length < 6) {
+                              return 'رقم الجوال المدخل غير صالح';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 24),
+                        FilledButton.icon(
+                          onPressed: _isSubmitting ? null : _submit,
+                          icon: _isSubmitting
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.check_circle_outline),
+                          label: Text(_isSubmitting ? 'جاري إنشاء الرحلة...' : 'إنشاء الرحلة'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -483,7 +546,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create Trip'),
+        title: const Text('إنشاء رحلة'),
       ),
       body: _buildBody(),
     );
