@@ -7,7 +7,8 @@ class UserProfile {
     this.email,
     this.phone,
     this.photoUrl,
-    this.tripsCount,
+    this.tripCount,
+    this.reviewsCount,
     this.rating,
   });
 
@@ -16,7 +17,8 @@ class UserProfile {
   final String? email;
   final String? phone;
   final String? photoUrl;
-  final int? tripsCount;
+  final int? tripCount;
+  final int? reviewsCount;
   final double? rating;
 
   String get initial {
@@ -38,7 +40,8 @@ class UserProfile {
     String? email,
     String? phone,
     String? photoUrl,
-    int? tripsCount,
+    int? tripCount,
+    int? reviewsCount,
     double? rating,
   }) {
     return UserProfile(
@@ -47,7 +50,8 @@ class UserProfile {
       email: email ?? this.email,
       phone: phone ?? this.phone,
       photoUrl: photoUrl ?? this.photoUrl,
-      tripsCount: tripsCount ?? this.tripsCount,
+      tripCount: tripCount ?? this.tripCount,
+      reviewsCount: reviewsCount ?? this.reviewsCount,
       rating: rating ?? this.rating,
     );
   }
@@ -59,7 +63,8 @@ class UserProfile {
       email: sanitizeOptionalText(data['email']),
       phone: sanitizeOptionalText(data['phone']),
       photoUrl: _sanitizeUrl(data['photoUrl']),
-      tripsCount: _toInt(data['tripsCount']),
+      tripCount: _toInt(data['tripCount'] ?? data['tripsCount']),
+      reviewsCount: _toInt(data['reviewsCount']),
       rating: _toDouble(data['rating']),
     );
   }

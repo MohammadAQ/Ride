@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
@@ -32,6 +33,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isUpdatingPhoto = false;
   String? _errorMessage;
   late final String _targetUserId;
+  bool _isDropHovering = false;
 
   bool get _isCurrentUser {
     final User? currentUser = FirebaseAuth.instance.currentUser;
@@ -90,7 +92,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           email: UserProfile.sanitizeOptionalText(authUser.email),
           phone: null,
           photoUrl: UserProfile.sanitizePhotoUrl(authUser.photoURL),
-          tripsCount: null,
+          tripCount: null,
+          reviewsCount: null,
           rating: null,
         );
         setState(() {
@@ -113,7 +116,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _changePhoto() async {
+  Future<void> _changePhoto({XFile? imageFile}) async {
     if (!_isCurrentUser || _profile == null || _isUpdatingPhoto) {
       return;
     }
@@ -123,13 +126,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _isUpdatingPhoto = true;
       });
 
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 85,
-        maxHeight: 1024,
-        maxWidth: 1024,
-      );
+      final XFile? image;
+      if (imageFile != null) {
+        image = imageFile;
+      } else {
+        final ImagePicker picker = ImagePicker();
+        image = await picker.pickImage(
+          source: ImageSource.gallery,
+          imageQuality: 85,
+          maxHeight: 1024,
+          maxWidth: 1024,
+        );
+      }
 
       if (image == null) {
         setState(() {
@@ -180,68 +188,207 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Widget _buildAvatar(ColorScheme colorScheme) {
-    final Widget avatar;
-    if (_profile?.photoUrl != null) {
-      avatar = CircleAvatar(
-        radius: 50,
-        backgroundImage: NetworkImage(_profile!.photoUrl!),
-      );
-    } else {
-      avatar = CircleAvatar(
-        radius: 50,
-        backgroundColor: colorScheme.primaryContainer,
-        child: Text(
-          (_profile?.initial ?? '?'),
-          style: TextStyle(
-            fontSize: 32,
-            fontWeight: FontWeight.bold,
-            color: colorScheme.onPrimaryContainer,
-          ),
-        ),
-      );
+  Future<void> _onDropFiles(List<XFile> files) async {
+    if (!_isCurrentUser || _isUpdatingPhoto) {
+      return;
     }
+    setState(() {
+      _isDropHovering = false;
+    });
+    if (files.isEmpty) {
+      return;
+    }
+    await _changePhoto(imageFile: files.first);
+  }
+
+  void _handleEditProfile() {
+    if (!_isCurrentUser) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('ميزة تعديل الملف الشخصي ستتوفر قريبًا.'),
+      ),
+    );
+  }
+
+  Future<void> _signOut() async {
+    await FirebaseAuth.instance.signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(),
+      ),
+    );
+  }
+
+  Widget _buildAvatar(ThemeData theme) {
+    final ColorScheme colorScheme = theme.colorScheme;
+
+    final Widget avatarContent = AnimatedSwitcher(
+      duration: const Duration(milliseconds: 350),
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeIn,
+      child: CircleAvatar(
+        key: ValueKey<String>(_profile?.photoUrl ?? 'initial_${_profile?.initial ?? '?'}'),
+        radius: 56,
+        backgroundImage:
+            _profile?.photoUrl != null ? NetworkImage(_profile!.photoUrl!) : null,
+        backgroundColor: colorScheme.primaryContainer.withOpacity(0.35),
+        child: _profile?.photoUrl == null
+            ? Text(
+                (_profile?.initial ?? '?'),
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.primary,
+                ),
+              )
+            : null,
+      ),
+    );
+
+    final Widget decoratedAvatar = AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+      padding: EdgeInsets.all(_isDropHovering ? 8 : 4),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: _isDropHovering
+            ? LinearGradient(
+                colors: <Color>[
+                  colorScheme.primary,
+                  colorScheme.secondary,
+                ],
+              )
+            : null,
+        color: _isDropHovering ? null : colorScheme.surface,
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: colorScheme.primary.withOpacity(0.2),
+            blurRadius: 22,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: colorScheme.surface,
+        ),
+        child: avatarContent,
+      ),
+    );
 
     if (!_isCurrentUser) {
-      return avatar;
+      return decoratedAvatar;
     }
 
-    return Stack(
+    final Widget interactiveAvatar = Stack(
       alignment: Alignment.center,
       children: <Widget>[
-        avatar,
-        Positioned(
-          bottom: 0,
-          right: 0,
-          child: Material(
-            color: colorScheme.primary,
-            shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: _isUpdatingPhoto ? null : _changePhoto,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: _isUpdatingPhoto
-                    ? SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            colorScheme.onPrimary,
-                          ),
-                        ),
-                      )
-                    : Icon(
-                        Icons.camera_alt,
-                        size: 18,
-                        color: colorScheme.onPrimary,
+        decoratedAvatar,
+        if (_isDropHovering && !_isUpdatingPhoto)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colorScheme.surface.withOpacity(0.65),
+                ),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surface,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      'أفلت الصورة هنا',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w600,
                       ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 200),
+              opacity: _isUpdatingPhoto ? 0.75 : 0,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colorScheme.surface.withOpacity(0.75),
+                ),
+                child: const Center(
+                  child: SizedBox(
+                    height: 28,
+                    width: 28,
+                    child: CircularProgressIndicator(strokeWidth: 3),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        PositionedDirectional(
+          bottom: 12,
+          end: 12,
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 200),
+            opacity: _isUpdatingPhoto ? 0 : 1,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colorScheme.primary,
+                shape: BoxShape.circle,
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: colorScheme.primary.withOpacity(0.45),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: const Padding(
+                padding: EdgeInsets.all(10),
+                child: Icon(
+                  Icons.camera_alt_rounded,
+                  size: 18,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
         ),
       ],
+    );
+
+    return DropTarget(
+      enable: !_isUpdatingPhoto,
+      onDragEntered: (DropEventDetails _) {
+        if (_isUpdatingPhoto) return;
+        setState(() {
+          _isDropHovering = true;
+        });
+      },
+      onDragExited: (DropEventDetails _) {
+        if (_isDropHovering) {
+          setState(() {
+            _isDropHovering = false;
+          });
+        }
+      },
+      onDragDone: (DropDoneDetails detail) => _onDropFiles(detail.files),
+      child: MouseRegion(
+        cursor:
+            _isUpdatingPhoto ? SystemMouseCursors.basic : SystemMouseCursors.click,
+        child: GestureDetector(
+          onDoubleTap: _isUpdatingPhoto ? null : () => _changePhoto(),
+          child: interactiveAvatar,
+        ),
+      ),
     );
   }
 
@@ -249,38 +396,115 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required IconData icon,
     required String label,
     required String value,
+    required ThemeData theme,
   }) {
-    return Row(
-      children: <Widget>[
-        Icon(icon, color: Colors.deepPurple.shade400),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
+    final ColorScheme colorScheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: colorScheme.primary.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, color: colorScheme.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  label,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface.withOpacity(0.75),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  child: Text(
+                    value,
+                    key: ValueKey<String>(value),
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricTile({
+    required IconData icon,
+    required String label,
+    required String value,
+    required ThemeData theme,
+  }) {
+    final ColorScheme colorScheme = theme.colorScheme;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withOpacity(0.25),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: colorScheme.primary.withOpacity(0.08)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            height: 36,
+            width: 36,
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withOpacity(0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              size: 20,
+              color: colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Text(
                 label,
-                style: const TextStyle(
+                style: theme.textTheme.bodySmall?.copyWith(
                   fontWeight: FontWeight.w600,
-                  fontSize: 14,
+                  color: colorScheme.onSurface.withOpacity(0.65),
                 ),
               ),
               const SizedBox(height: 4),
-              Text(
-                value,
-                style: const TextStyle(fontSize: 14),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: Text(
+                  value,
+                  key: ValueKey<String>('metric_$label$value'),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
               ),
             ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final ColorScheme colorScheme = theme.colorScheme;
 
     final Widget bodyContent;
     if (_isLoading) {
@@ -299,74 +523,253 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } else {
       final String email = _profile!.email ?? 'لا يوجد بريد إلكتروني';
       final String phone = _profile!.phone ?? 'لا يوجد رقم هاتف';
-      final String trips = _profile!.tripsCount != null
-          ? _profile!.tripsCount.toString()
-          : 'غير متوفر';
-      final String rating = _profile!.rating != null
-          ? _profile!.rating!.toStringAsFixed(1)
-          : 'غير متوفر';
+      final int tripCount = _profile!.tripCount ?? 0;
+      final int reviewsCount = _profile!.reviewsCount ?? 0;
+      final String ratingValue = _profile!.rating != null
+          ? '${_profile!.rating!.toStringAsFixed(1)} ⭐'
+          : '--';
 
-      bodyContent = SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: <Widget>[
-            _buildAvatar(colorScheme),
-            const SizedBox(height: 24),
-            Text(
-              _profile!.displayName,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              email,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7),
-              ),
-            ),
-            const SizedBox(height: 32),
-            _buildInfoTile(
-              icon: Icons.phone_rounded,
-              label: 'رقم الهاتف',
-              value: phone,
-            ),
-            const SizedBox(height: 16),
-            _buildInfoTile(
-              icon: Icons.directions_car_filled,
-              label: 'عدد الرحلات',
-              value: trips,
-            ),
-            const SizedBox(height: 16),
-            _buildInfoTile(
-              icon: Icons.star_rate_rounded,
-              label: 'التقييم',
-              value: rating,
-            ),
-            if (_isCurrentUser) ...<Widget>[
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () async {
-                    await FirebaseAuth.instance.signOut();
-                    if (!mounted) return;
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(
-                        builder: (_) => const LoginScreen(),
+      bodyContent = LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool isWide = constraints.maxWidth >= 720;
+          final EdgeInsetsGeometry padding = EdgeInsets.symmetric(
+            horizontal: isWide ? 32 : 24,
+            vertical: 32,
+          );
+
+          final Widget contactTiles = isWide
+              ? Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: _buildInfoTile(
+                        icon: Icons.email_rounded,
+                        label: 'البريد الإلكتروني',
+                        value: email,
+                        theme: theme,
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.logout),
-                  label: const Text('تسجيل الخروج'),
-                ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildInfoTile(
+                        icon: Icons.phone_rounded,
+                        label: 'رقم الهاتف',
+                        value: phone,
+                        theme: theme,
+                      ),
+                    ),
+                  ],
+                )
+              : Column(
+                  children: <Widget>[
+                    _buildInfoTile(
+                      icon: Icons.email_rounded,
+                      label: 'البريد الإلكتروني',
+                      value: email,
+                      theme: theme,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildInfoTile(
+                      icon: Icons.phone_rounded,
+                      label: 'رقم الهاتف',
+                      value: phone,
+                      theme: theme,
+                    ),
+                  ],
+                );
+
+          final Widget statsGrid = isWide
+              ? Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: _buildMetricTile(
+                        icon: Icons.directions_car_filled_rounded,
+                        label: 'الرحلات',
+                        value: tripCount.toString(),
+                        theme: theme,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildMetricTile(
+                        icon: Icons.people_alt_rounded,
+                        label: 'التقييمات المستلمة',
+                        value: reviewsCount.toString(),
+                        theme: theme,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildMetricTile(
+                        icon: Icons.star_rate_rounded,
+                        label: 'متوسط التقييم',
+                        value: ratingValue,
+                        theme: theme,
+                      ),
+                    ),
+                  ],
+                )
+              : Column(
+                  children: <Widget>[
+                    _buildMetricTile(
+                      icon: Icons.directions_car_filled_rounded,
+                      label: 'الرحلات',
+                      value: tripCount.toString(),
+                      theme: theme,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildMetricTile(
+                      icon: Icons.people_alt_rounded,
+                      label: 'التقييمات المستلمة',
+                      value: reviewsCount.toString(),
+                      theme: theme,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildMetricTile(
+                      icon: Icons.star_rate_rounded,
+                      label: 'متوسط التقييم',
+                      value: ratingValue,
+                      theme: theme,
+                    ),
+                  ],
+                );
+
+          return SingleChildScrollView(
+            padding: padding,
+            physics: const BouncingScrollPhysics(),
+            child: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Container(
+                    padding: EdgeInsets.all(isWide ? 32 : 24),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(32),
+                      border: Border.all(
+                        color: theme.colorScheme.primary.withOpacity(0.08),
+                      ),
+                      boxShadow: <BoxShadow>[
+                        BoxShadow(
+                          color: theme.colorScheme.primary.withOpacity(0.08),
+                          blurRadius: 28,
+                          offset: const Offset(0, 16),
+                        ),
+                      ],
+                    ),
+                    child: isWide
+                        ? Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: <Widget>[
+                              SizedBox(
+                                width: 168,
+                                child: Center(child: _buildAvatar(theme)),
+                              ),
+                              const SizedBox(width: 32),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    Text(
+                                      _profile!.displayName,
+                                      style: theme.textTheme.headlineSmall?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      email,
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        color: theme.textTheme.bodyMedium?.color
+                                            ?.withOpacity(0.7),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 24),
+                                    contactTiles,
+                                  ],
+                                ),
+                              ),
+                            ],
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: <Widget>[
+                              Center(child: _buildAvatar(theme)),
+                              const SizedBox(height: 24),
+                              Text(
+                                _profile!.displayName,
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                email,
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.textTheme.bodyMedium?.color
+                                      ?.withOpacity(0.7),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              contactTiles,
+                            ],
+                          ),
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        Text(
+                          'النشاط والإحصائيات',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: theme.colorScheme.primary.withOpacity(0.1),
+                        ),
+                        const SizedBox(height: 20),
+                        statsGrid,
+                      ],
+                    ),
+                  ),
+                  if (_isCurrentUser) ...<Widget>[
+                    const SizedBox(height: 24),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      alignment: WrapAlignment.end,
+                      children: <Widget>[
+                        FilledButton.icon(
+                          onPressed: _handleEditProfile,
+                          icon: const Icon(Icons.edit_rounded),
+                          label: const Text('تعديل الملف الشخصي'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _signOut,
+                          icon: const Icon(Icons.logout_rounded),
+                          label: const Text('تسجيل الخروج'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
               ),
-            ],
-          ],
-        ),
+            ),
+          );
+        },
       );
     }
 
