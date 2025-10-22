@@ -335,7 +335,6 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
                             }
                           }
                         },
-                        },
                         onProfileTap: () {
                           if (senderId.isEmpty) {
                             return;
