@@ -571,7 +571,11 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     setState(() {
       for (final DocumentChange<Map<String, dynamic>> change
           in snapshot.docChanges) {
-        final QueryDocumentSnapshot<Map<String, dynamic>> doc = change.doc;
+        final DocumentSnapshot<Map<String, dynamic>> rawDoc = change.doc;
+        if (rawDoc is! QueryDocumentSnapshot<Map<String, dynamic>>) {
+          continue;
+        }
+        final QueryDocumentSnapshot<Map<String, dynamic>> doc = rawDoc;
         docsToWarm.add(doc);
 
         if (change.type == DocumentChangeType.added) {
