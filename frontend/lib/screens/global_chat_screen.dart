@@ -27,6 +27,7 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
 
   final Map<String, UserProfile> _userProfiles = <String, UserProfile>{};
   final Set<String> _pendingProfileRequests = <String>{};
+  final Set<String> _backfilledSenderMessageIds = <String>{};
 
   static const int _maxMessageLength = 250;
   static const Duration _rateLimitDuration = Duration(seconds: 3);
@@ -231,12 +232,15 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     final User? user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
+    final _SenderIdResolution senderResolution = _resolveSenderId(data);
+    final String senderId = senderResolution.id;
+
     await FirebaseFirestore.instance.collection('reports').add({
       'messageId': messageId,
       'reportedAt': FieldValue.serverTimestamp(),
       'reporterId': user.uid,
       'reporterName': user.displayName,
-      'senderId': data['senderId'],
+      'senderId': senderId,
       'senderName': data['senderName'],
       'message': data['message'],
     });
@@ -316,10 +320,12 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
           physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
           itemCount: _messages.length,
           itemBuilder: (BuildContext context, int index) {
-            final QueryDocumentSnapshot<Map<String, dynamic>> doc = _messages[index];
+            final QueryDocumentSnapshot<Map<String, dynamic>> doc =
+                _messages[index];
             final Map<String, dynamic> data = doc.data();
-            final String senderId =
-                (data['senderId'] as String?)?.trim() ?? '';
+            final _SenderIdResolution senderResolution = _resolveSenderId(data);
+            final String senderId = senderResolution.id;
+            _ensureMessageHasSenderId(doc, data, senderResolution);
             final bool isCurrentUser = senderId == currentUser.uid;
             final UserProfile profile =
                 _userProfiles[senderId] ?? _userProfileFromMessageData(senderId, data);
@@ -366,12 +372,46 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
                 if (senderId.isEmpty) {
                   return;
                 }
+                final bool openEditable = isCurrentUser;
                 Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ProfileScreen(
-                      userId: senderId,
-                      initialProfile: profile,
-                    ),
+                  PageRouteBuilder<void>(
+                    pageBuilder: (
+                      BuildContext context,
+                      Animation<double> animation,
+                      Animation<double> secondaryAnimation,
+                    ) {
+                      return ProfileScreen(
+                        userId: openEditable ? null : senderId,
+                        initialProfile: profile,
+                      );
+                    },
+                    transitionsBuilder: (
+                      BuildContext context,
+                      Animation<double> animation,
+                      Animation<double> secondaryAnimation,
+                      Widget child,
+                    ) {
+                      final Animation<Offset> offsetAnimation = Tween<Offset>(
+                        begin: const Offset(1, 0),
+                        end: Offset.zero,
+                      ).animate(
+                        CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeInOut,
+                        ),
+                      );
+                      return SlideTransition(
+                        position: offsetAnimation,
+                        child: FadeTransition(
+                          opacity: CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeOut,
+                          ),
+                          child: child,
+                        ),
+                      );
+                    },
+                    transitionDuration: const Duration(milliseconds: 280),
                   ),
                 );
               },
@@ -623,7 +663,9 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
   ) {
     for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in docs) {
       final Map<String, dynamic> data = doc.data();
-      final String senderId = (data['senderId'] as String?)?.trim() ?? '';
+      final _SenderIdResolution senderResolution = _resolveSenderId(data);
+      final String senderId = senderResolution.id;
+      _ensureMessageHasSenderId(doc, data, senderResolution);
       if (senderId.isEmpty) {
         continue;
       }
@@ -633,6 +675,65 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
       }
       _fetchUserProfile(senderId, data);
     }
+  }
+
+  _SenderIdResolution _resolveSenderId(Map<String, dynamic> data) {
+    final String direct = _normalizeSenderValue(data['senderId']);
+    if (direct.isNotEmpty) {
+      data['senderId'] = direct;
+      return _SenderIdResolution(direct, needsBackfill: false);
+    }
+
+    for (final String key in <String>['senderUid', 'userId', 'uid', 'sender_id']) {
+      final String fallback = _normalizeSenderValue(data[key]);
+      if (fallback.isNotEmpty) {
+        data['senderId'] = fallback;
+        return _SenderIdResolution(fallback, needsBackfill: true);
+      }
+    }
+
+    return const _SenderIdResolution('', needsBackfill: false);
+  }
+
+  String _normalizeSenderValue(dynamic value) {
+    if (value == null) {
+      return '';
+    }
+    if (value is String) {
+      return value.trim();
+    }
+    if (value is DocumentReference<Object?>) {
+      return value.id.trim();
+    }
+    return '';
+  }
+
+  void _ensureMessageHasSenderId(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    Map<String, dynamic> data,
+    _SenderIdResolution resolution,
+  ) {
+    if (!resolution.needsBackfill || resolution.id.isEmpty) {
+      return;
+    }
+
+    final String current = (data['senderId'] as String?)?.trim() ?? '';
+    if (current != resolution.id) {
+      data['senderId'] = resolution.id;
+    }
+
+    if (_backfilledSenderMessageIds.contains(doc.id)) {
+      return;
+    }
+    _backfilledSenderMessageIds.add(doc.id);
+    unawaited(
+      doc.reference
+          .set(<String, dynamic>{'senderId': resolution.id}, SetOptions(merge: true))
+          .catchError((_) {})
+          .whenComplete(() {
+        _backfilledSenderMessageIds.remove(doc.id);
+      }),
+    );
   }
 
   Future<void> _fetchUserProfile(
@@ -702,6 +803,13 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     );
   }
 
+}
+
+class _SenderIdResolution {
+  const _SenderIdResolution(this.id, {required this.needsBackfill});
+
+  final String id;
+  final bool needsBackfill;
 }
 
 class _MessageBubble extends StatelessWidget {
