@@ -14,7 +14,14 @@ class GlobalChatScreen extends StatefulWidget {
 class _GlobalChatScreenState extends State<GlobalChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _messageFocusNode = FocusNode();
+
+  DateTime? _lastSentAt;
+  String? _lastSentMessage;
   int _previousMessageCount = 0;
+
+  static const int _maxMessageLength = 250;
+  static const Duration _rateLimitDuration = Duration(seconds: 3);
 
   static const List<String> _bannedWords = <String>[
     'badword',
@@ -26,28 +33,72 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
+    _messageFocusNode.dispose();
     super.dispose();
   }
 
   Future<void> _sendMessage() async {
     final User? user = FirebaseAuth.instance.currentUser;
-    final String rawMessage = _messageController.text.trim();
+    final String rawMessage = _messageController.text;
 
-    if (user == null || rawMessage.isEmpty) {
+    if (user == null) {
       return;
     }
 
-    final String filteredMessage = _filterMessage(rawMessage);
+    final String trimmedMessage = rawMessage.trim();
 
-    await FirebaseFirestore.instance.collection('global_chat').add({
-      'senderName': user.displayName ?? 'مستخدم',
-      'senderId': user.uid,
-      'message': filteredMessage,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
+    if (trimmedMessage.isEmpty) {
+      _showError(context, 'الرسالة غير صالحة');
+      return;
+    }
 
-    _messageController.clear();
-    _scrollToBottom();
+    if (trimmedMessage.length > _maxMessageLength) {
+      _showError(context, 'الرسالة طويلة للغاية');
+      return;
+    }
+
+    final DateTime now = DateTime.now();
+    if (_lastSentAt != null && now.difference(_lastSentAt!) < _rateLimitDuration) {
+      _showError(context, 'الرجاء الانتظار قبل إرسال رسالة جديدة');
+      return;
+    }
+
+    if (_containsLinksOrEmails(trimmedMessage)) {
+      _showError(context, 'الروابط والبريد الإلكتروني غير مسموح بها');
+      return;
+    }
+
+    final String sanitized = _sanitizeMessage(trimmedMessage);
+
+    if (sanitized.isEmpty) {
+      _showError(context, 'الرسالة غير صالحة');
+      return;
+    }
+
+    if (_lastSentMessage != null &&
+        _normalizeMessage(sanitized) == _normalizeMessage(_lastSentMessage!)) {
+      _showError(context, 'لا يمكن إرسال نفس الرسالة مرتين متتاليتين');
+      return;
+    }
+
+    final String filteredMessage = _filterMessage(sanitized);
+
+    try {
+      await FirebaseFirestore.instance.collection('global_chat').add({
+        'senderName': user.displayName ?? 'مستخدم',
+        'senderId': user.uid,
+        'message': filteredMessage,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      _lastSentAt = now;
+      _lastSentMessage = sanitized;
+      _messageController.clear();
+      _messageFocusNode.requestFocus();
+      _scrollToBottom();
+    } catch (e) {
+      _showError(context, 'تعذّر إرسال الرسالة، حاول مرة أخرى');
+    }
   }
 
   String _filterMessage(String message) {
@@ -61,6 +112,44 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
       filtered = filtered.replaceAll(pattern, '***');
     }
     return filtered;
+  }
+
+  bool _containsLinksOrEmails(String message) {
+    final RegExp pattern = RegExp(
+      r'(https?:\/\/\S+|\b[\w\.-]+@[\w\.-]+\.\w{2,}\b)',
+      caseSensitive: false,
+    );
+    return pattern.hasMatch(message);
+  }
+
+  String _sanitizeMessage(String message) {
+    String sanitized = message.replaceAll(
+      RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]'),
+      '',
+    );
+    sanitized = sanitized.replaceAll(RegExp(r'[\u200B-\u200D\uFEFF]'), '');
+    return sanitized;
+  }
+
+  String _normalizeMessage(String message) {
+    return message
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  void _showError(BuildContext context, String message) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message, textAlign: TextAlign.center),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
   }
 
   void _scrollToBottom() {
@@ -201,7 +290,9 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
           ),
           _MessageInput(
             controller: _messageController,
+            focusNode: _messageFocusNode,
             onSend: _sendMessage,
+            maxLength: _maxMessageLength,
           ),
         ],
       ),
@@ -304,60 +395,124 @@ class _MessageBubble extends StatelessWidget {
   }
 }
 
-class _MessageInput extends StatelessWidget {
+class _MessageInput extends StatefulWidget {
   const _MessageInput({
     required this.controller,
+    required this.focusNode,
     required this.onSend,
+    required this.maxLength,
   });
 
   final TextEditingController controller;
+  final FocusNode focusNode;
   final VoidCallback onSend;
+  final int maxLength;
+
+  @override
+  State<_MessageInput> createState() => _MessageInputState();
+}
+
+class _MessageInputState extends State<_MessageInput> {
+  late int _currentLength;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentLength = widget.controller.text.length;
+    widget.controller.addListener(_handleTextChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleTextChanged);
+    super.dispose();
+  }
+
+  void _handleTextChanged() {
+    final String text = widget.controller.text;
+    if (text.length > widget.maxLength) {
+      widget.controller.text = text.substring(0, widget.maxLength);
+      widget.controller.selection = TextSelection.fromPosition(
+        TextPosition(offset: widget.controller.text.length),
+      );
+    }
+
+    setState(() {
+      _currentLength = widget.controller.text.length;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final bool showCounter = _currentLength > 0;
+    final bool atLimit = _currentLength >= widget.maxLength;
+
     return SafeArea(
       top: false,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: TextField(
-                controller: controller,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) => onSend(),
-                minLines: 1,
-                maxLines: 4,
-                textAlign: TextAlign.right,
-                decoration: const InputDecoration(
-                  hintText: 'اكتب رسالتك...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(12)),
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, -2),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: TextField(
+                      controller: widget.controller,
+                      focusNode: widget.focusNode,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => widget.onSend(),
+                      minLines: 1,
+                      maxLines: 4,
+                      textAlign: TextAlign.right,
+                      textDirection: TextDirection.rtl,
+                      decoration: const InputDecoration(
+                        hintText: 'اكتب رسالتك...',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(12)),
+                        ),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                      ),
+                    ),
                   ),
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: widget.onSend,
+                    icon: const Icon(Icons.send),
+                    color: Colors.deepPurple,
+                  ),
+                ],
+              ),
+              if (showCounter)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, right: 4),
+                  child: Text(
+                    '${_currentLength}/${widget.maxLength}',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: atLimit ? Colors.red.shade600 : Colors.grey.shade600,
+                    ),
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: onSend,
-              icon: const Icon(Icons.send),
-              color: Colors.deepPurple,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
