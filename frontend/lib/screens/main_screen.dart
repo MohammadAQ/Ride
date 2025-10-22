@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:carpal_app/screens/create_trip_screen.dart';
+import 'package:carpal_app/screens/global_chat_screen.dart';
 import 'package:carpal_app/screens/my_trips_screen.dart';
 import 'package:carpal_app/screens/profile_screen.dart';
 import 'package:carpal_app/screens/search_trips_screen.dart';
@@ -28,6 +29,10 @@ class _MainScreenState extends State<MainScreen> {
       page: CreateTripScreen(showAppBar: false),
     ),
     _Destination(
+      title: 'Global Chat',
+      page: GlobalChatScreen(showAppBar: false),
+    ),
+    _Destination(
       title: 'Profile',
       page: ProfileScreen(showAppBar: false),
     ),
@@ -49,6 +54,7 @@ class _MainScreenState extends State<MainScreen> {
       ),
       body: _destinations[_selectedIndex].page,
       bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
         selectedItemColor: Colors.deepPurple,
@@ -65,6 +71,10 @@ class _MainScreenState extends State<MainScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.add_circle_outline),
             label: 'Create Trip',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.chat_bubble_outline),
+            label: 'Global Chat',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person),
