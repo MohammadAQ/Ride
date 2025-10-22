@@ -198,7 +198,6 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
                   );
                 },
               ),
-            ),
           ),
           _MessageInput(
             controller: _messageController,
