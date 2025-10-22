@@ -98,7 +98,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       } else {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'لا توجد معلومات متاحة لهذا المستخدم.';
+          _errorMessage = 'لا توجد معلومات متاحة لهذا المستخدم';
         });
       }
     } catch (_) {
