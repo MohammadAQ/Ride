@@ -78,7 +78,8 @@ class _UserProfilePreviewState extends State<UserProfilePreview> {
       email: null,
       phone: null,
       photoUrl: null,
-      tripsCount: null,
+      tripCount: null,
+      reviewsCount: null,
       rating: null,
     );
   }
