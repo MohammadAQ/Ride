@@ -3,7 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 class GlobalChatScreen extends StatefulWidget {
-  const GlobalChatScreen({super.key});
+  const GlobalChatScreen({super.key, this.showAppBar = true});
+
+  final bool showAppBar;
 
   @override
   State<GlobalChatScreen> createState() => _GlobalChatScreenState();
@@ -96,24 +98,22 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     final User? currentUser = FirebaseAuth.instance.currentUser;
 
     if (currentUser == null) {
-      return const Scaffold(
-        body: Center(
-          child: Text('الرجاء تسجيل الدخول للوصول إلى المحادثة العامة.'),
-        ),
+      final Widget content = const Center(
+        child: Text('الرجاء تسجيل الدخول للوصول إلى المحادثة العامة.'),
       );
+
+      if (widget.showAppBar) {
+        return Scaffold(body: content);
+      }
+
+      return content;
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('المحادثة العامة 💬'),
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
-      ),
-      body: SafeArea(
-        child: Column(
-          children: <Widget>[
-            Expanded(
-              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+    final Widget chatContent = SafeArea(
+      child: Column(
+        children: <Widget>[
+          Expanded(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: FirebaseFirestore.instance
                     .collection('global_chat')
                     .orderBy('timestamp', descending: false)
@@ -199,14 +199,27 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
                 },
               ),
             ),
-            _MessageInput(
-              controller: _messageController,
-              onSend: _sendMessage,
-            ),
-          ],
-        ),
+          ),
+          _MessageInput(
+            controller: _messageController,
+            onSend: _sendMessage,
+          ),
+        ],
       ),
     );
+
+    if (widget.showAppBar) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('المحادثة العامة 💬'),
+          backgroundColor: Colors.deepPurple,
+          foregroundColor: Colors.white,
+        ),
+        body: chatContent,
+      );
+    }
+
+    return chatContent;
   }
 }
 
