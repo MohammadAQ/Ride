@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
+import 'package:carpal_app/models/user_profile.dart';
+import 'package:carpal_app/screens/profile_screen.dart';
 
 class GlobalChatScreen extends StatefulWidget {
   const GlobalChatScreen({super.key, this.showAppBar = true});
@@ -19,6 +24,12 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
   DateTime? _lastSentAt;
   String? _lastSentMessage;
   int _previousMessageCount = 0;
+  bool _isSyncingProfile = false;
+
+  final Map<String, UserProfile> _userProfiles = <String, UserProfile>{};
+  final Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>
+      _profileSubscriptions =
+      <String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>{};
 
   static const int _maxMessageLength = 250;
   static const Duration _rateLimitDuration = Duration(seconds: 3);
@@ -34,7 +45,40 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     _messageController.dispose();
     _scrollController.dispose();
     _messageFocusNode.dispose();
+    for (final StreamSubscription<DocumentSnapshot<Map<String, dynamic>>> sub
+        in _profileSubscriptions.values) {
+      sub.cancel();
+    }
     super.dispose();
+  }
+
+  Future<void> _ensureCurrentUserProfile(User user) async {
+    if (_isSyncingProfile) return;
+    _isSyncingProfile = true;
+    try {
+      final DocumentReference<Map<String, dynamic>> docRef =
+          FirebaseFirestore.instance.collection('users').doc(user.uid);
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await docRef.get();
+      final String sanitizedName =
+          UserProfile.sanitizeDisplayName(user.displayName);
+      final Map<String, dynamic> updates = <String, dynamic>{
+        'displayName': sanitizedName,
+      };
+      final String? sanitizedEmail = UserProfile.sanitizeOptionalText(user.email);
+      if (sanitizedEmail != null) {
+        updates['email'] = sanitizedEmail;
+      }
+
+      if (!snapshot.exists) {
+        await docRef.set(updates, SetOptions(merge: true));
+      } else {
+        await docRef.set(updates, SetOptions(merge: true));
+      }
+    } catch (_) {
+      // Ignore errors during sync to avoid blocking chat usage.
+    } finally {
+      _isSyncingProfile = false;
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -84,8 +128,9 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     final String filteredMessage = _filterMessage(sanitized);
 
     try {
+      await _ensureCurrentUserProfile(user);
       await FirebaseFirestore.instance.collection('global_chat').add({
-        'senderName': user.displayName ?? 'مستخدم',
+        'senderName': UserProfile.sanitizeDisplayName(user.displayName),
         'senderId': user.uid,
         'message': filteredMessage,
         'timestamp': FieldValue.serverTimestamp(),
@@ -235,6 +280,8 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
                     _scrollToBottom();
                   }
 
+                  _preloadProfiles(docs);
+
                   return ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.all(16),
@@ -247,8 +294,14 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
                         return const SizedBox.shrink();
                       }
 
+                      final String senderId =
+                          (data['senderId'] as String?)?.trim() ?? '';
+                      final UserProfile profile = _userProfiles[senderId] ??
+                          _userProfileFromMessageData(senderId, data);
+
                       return _MessageBubble(
                         data: data,
+                        profile: profile,
                         isCurrentUser: data['senderId'] == currentUser.uid,
                         onLongPress: () async {
                           final bool? shouldReport = await showDialog<bool>(
@@ -282,6 +335,20 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
                             }
                           }
                         },
+                        },
+                        onProfileTap: () {
+                          if (senderId.isEmpty) {
+                            return;
+                          }
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => ProfileScreen(
+                                userId: senderId,
+                                initialProfile: profile,
+                              ),
+                            ),
+                          );
+                        },
                       );
                     },
                   );
@@ -310,19 +377,70 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     }
 
     return chatContent;
+}
+
+  void _preloadProfiles(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in docs) {
+      final Map<String, dynamic>? data = doc.data();
+      if (data == null) continue;
+      final String senderId = (data['senderId'] as String?)?.trim() ?? '';
+      if (senderId.isEmpty || _profileSubscriptions.containsKey(senderId)) {
+        continue;
+      }
+
+      final StreamSubscription<DocumentSnapshot<Map<String, dynamic>>> sub =
+          FirebaseFirestore.instance
+              .collection('users')
+              .doc(senderId)
+              .snapshots()
+              .listen((DocumentSnapshot<Map<String, dynamic>> snapshot) {
+        final UserProfile profile =
+            UserProfile.fromFirestoreSnapshot(snapshot);
+        if (!mounted) return;
+        setState(() {
+          _userProfiles[senderId] = profile;
+        });
+      });
+
+      _profileSubscriptions[senderId] = sub;
+    }
   }
+
+  UserProfile _userProfileFromMessageData(
+    String senderId,
+    Map<String, dynamic> data,
+  ) {
+    final String fallbackName =
+        UserProfile.sanitizeDisplayName(data['senderName']);
+    return UserProfile(
+      id: senderId,
+      displayName: fallbackName,
+      email: null,
+      phone: null,
+      photoUrl: null,
+      tripsCount: null,
+      rating: null,
+    );
+  }
+
 }
 
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
     required this.data,
+    required this.profile,
     required this.isCurrentUser,
     this.onLongPress,
+    this.onProfileTap,
   });
 
   final Map<String, dynamic> data;
+  final UserProfile profile;
   final bool isCurrentUser;
   final VoidCallback? onLongPress;
+  final VoidCallback? onProfileTap;
 
   @override
   Widget build(BuildContext context) {
@@ -337,60 +455,120 @@ class _MessageBubble extends StatelessWidget {
         : Colors.grey.shade200;
     final Color textColor = isCurrentUser ? Colors.white : Colors.black87;
 
-    final Alignment alignment =
-        isCurrentUser ? Alignment.centerRight : Alignment.centerLeft;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment:
+            isCurrentUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: <Widget>[
+          _Avatar(
+            profile: profile,
+            isCurrentUser: isCurrentUser,
+            onTap: onProfileTap,
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: GestureDetector(
+              onLongPress: onLongPress,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                decoration: BoxDecoration(
+                  color: backgroundColor,
+                  borderRadius: BorderRadius.circular(16).copyWith(
+                    topLeft:
+                        isCurrentUser ? const Radius.circular(16) : Radius.zero,
+                    topRight:
+                        isCurrentUser ? Radius.zero : const Radius.circular(16),
+                  ),
+                ),
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.7,
+                ),
+                child: Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      GestureDetector(
+                        onTap: onProfileTap,
+                        child: Text(
+                          profile.displayName,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color:
+                                textColor.withOpacity(isCurrentUser ? 0.9 : 0.8),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        data['message'] ?? '',
+                        style: TextStyle(color: textColor, fontSize: 15),
+                      ),
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          formattedTime,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: textColor.withOpacity(0.7),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-    return Align(
-      alignment: alignment,
-      child: GestureDetector(
-        onLongPress: onLongPress,
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 6),
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(16).copyWith(
-              topLeft: isCurrentUser ? const Radius.circular(16) : Radius.zero,
-              topRight: isCurrentUser ? Radius.zero : const Radius.circular(16),
-            ),
-          ),
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.7,
-          ),
-          child: Directionality(
-            textDirection: TextDirection.rtl,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  data['senderName'] ?? 'مستخدم',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                    color: textColor.withOpacity(isCurrentUser ? 0.9 : 0.8),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  data['message'] ?? '',
-                  style: TextStyle(color: textColor, fontSize: 15),
-                ),
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    formattedTime,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: textColor.withOpacity(0.7),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+class _Avatar extends StatelessWidget {
+  const _Avatar({
+    required this.profile,
+    required this.isCurrentUser,
+    this.onTap,
+  });
+
+  final UserProfile profile;
+  final bool isCurrentUser;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget avatarChild;
+    if (profile.photoUrl != null) {
+      avatarChild = CircleAvatar(
+        radius: 20,
+        backgroundImage: NetworkImage(profile.photoUrl!),
+      );
+    } else {
+      avatarChild = CircleAvatar(
+        radius: 20,
+        backgroundColor: isCurrentUser
+            ? Colors.deepPurple.shade200
+            : Colors.grey.shade400,
+        child: Text(
+          profile.initial,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
           ),
         ),
-      ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      child: avatarChild,
     );
   }
 }
