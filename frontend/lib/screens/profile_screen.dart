@@ -11,6 +11,24 @@ import 'package:carpal_app/models/user_profile.dart';
 import 'package:carpal_app/screens/login_screen.dart';
 import 'package:carpal_app/services/user_profile_cache.dart';
 
+class _ProfileStatistics {
+  const _ProfileStatistics({
+    this.tripCount,
+    this.reviewsCount,
+    this.rating,
+    this.didFetchTrips = false,
+    this.didFetchReviews = false,
+    this.hasRatingSamples = false,
+  });
+
+  final int? tripCount;
+  final int? reviewsCount;
+  final double? rating;
+  final bool didFetchTrips;
+  final bool didFetchReviews;
+  final bool hasRatingSamples;
+}
+
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
     super.key,
@@ -39,6 +57,237 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final User? currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return false;
     return widget.userId == null || widget.userId == currentUser.uid;
+  }
+
+  Future<_ProfileStatistics> _loadProfileStatistics(String userId) async {
+    final FirebaseFirestore firestore = FirebaseFirestore.instance;
+
+    bool didFetchTrips = false;
+    final Set<String> tripIds = <String>{};
+
+    try {
+      final QuerySnapshot<Map<String, dynamic>> driverSnapshot = await firestore
+          .collection('trips')
+          .where('driverId', isEqualTo: userId)
+          .get();
+      didFetchTrips = true;
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+          in driverSnapshot.docs) {
+        tripIds.add(doc.id);
+      }
+    } catch (_) {
+      // Ignore and continue collecting data from other queries.
+    }
+
+    const List<String> membershipFields = <String>[
+      'passengerIds',
+      'passengersIds',
+      'participants',
+      'participantsIds',
+      'joinedUserIds',
+      'memberIds',
+      'members',
+    ];
+
+    for (final String field in membershipFields) {
+      final QuerySnapshot<Map<String, dynamic>>? snapshot =
+          await _queryTripsByArrayField(firestore, field, userId);
+      if (snapshot == null) {
+        continue;
+      }
+      didFetchTrips = true;
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+          in snapshot.docs) {
+        tripIds.add(doc.id);
+      }
+    }
+
+    final int? tripCount = didFetchTrips ? tripIds.length : null;
+
+    bool didFetchReviews = false;
+    final Set<String> reviewIds = <String>{};
+    final List<Map<String, dynamic>> reviewData = <Map<String, dynamic>>[];
+
+    const List<String> reviewFields = <String>[
+      'recipientId',
+      'driverId',
+      'userId',
+      'targetUserId',
+    ];
+
+    for (final String field in reviewFields) {
+      final QuerySnapshot<Map<String, dynamic>>? snapshot =
+          await _queryReviewsByField(firestore, field, userId);
+      if (snapshot == null) {
+        continue;
+      }
+      didFetchReviews = true;
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+          in snapshot.docs) {
+        if (reviewIds.add(doc.id)) {
+          reviewData.add(doc.data());
+        }
+      }
+    }
+
+    int? reviewsCount;
+    double? rating;
+    bool hasRatingSamples = false;
+
+    if (didFetchReviews) {
+      reviewsCount = reviewIds.length;
+      double totalRating = 0;
+      int ratingSamples = 0;
+
+      for (final Map<String, dynamic> data in reviewData) {
+        final double? value = _extractRatingValue(data);
+        if (value != null) {
+          totalRating += value;
+          ratingSamples += 1;
+        }
+      }
+
+      if (ratingSamples > 0) {
+        hasRatingSamples = true;
+        rating = totalRating / ratingSamples;
+      }
+    }
+
+    return _ProfileStatistics(
+      tripCount: tripCount,
+      reviewsCount: reviewsCount,
+      rating: rating,
+      didFetchTrips: didFetchTrips,
+      didFetchReviews: didFetchReviews,
+      hasRatingSamples: hasRatingSamples,
+    );
+  }
+
+  Future<QuerySnapshot<Map<String, dynamic>>?> _queryTripsByArrayField(
+    FirebaseFirestore firestore,
+    String field,
+    String userId,
+  ) async {
+    try {
+      return await firestore
+          .collection('trips')
+          .where(field, arrayContains: userId)
+          .get();
+    } on FirebaseException catch (error) {
+      if (error.code == 'failed-precondition' ||
+          error.code == 'permission-denied' ||
+          error.code == 'invalid-argument') {
+        return null;
+      }
+      rethrow;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<QuerySnapshot<Map<String, dynamic>>?> _queryReviewsByField(
+    FirebaseFirestore firestore,
+    String field,
+    String userId,
+  ) async {
+    try {
+      return await firestore
+          .collection('reviews')
+          .where(field, isEqualTo: userId)
+          .get();
+    } on FirebaseException catch (error) {
+      if (error.code == 'failed-precondition' ||
+          error.code == 'permission-denied' ||
+          error.code == 'invalid-argument') {
+        return null;
+      }
+      rethrow;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  double? _extractRatingValue(Map<String, dynamic> data) {
+    const List<String> ratingKeys = <String>[
+      'rating',
+      'score',
+      'stars',
+      'value',
+      'ratingValue',
+      'rating_score',
+    ];
+
+    for (final String key in ratingKeys) {
+      if (!data.containsKey(key)) {
+        continue;
+      }
+      final double? parsed = _parseNumeric(data[key]);
+      if (parsed != null) {
+        return parsed;
+      }
+    }
+
+    final dynamic nested = data['rating'];
+    if (nested is Map<String, dynamic>) {
+      for (final String key in ratingKeys) {
+        if (!nested.containsKey(key)) {
+          continue;
+        }
+        final double? parsed = _parseNumeric(nested[key]);
+        if (parsed != null) {
+          return parsed;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  double? _parseNumeric(dynamic value) {
+    if (value == null) return null;
+    if (value is num) {
+      return value.toDouble();
+    }
+    if (value is Map<String, dynamic>) {
+      for (final String key in <String>['value', 'rating', 'score', 'stars']) {
+        if (!value.containsKey(key)) {
+          continue;
+        }
+        final double? parsed = _parseNumeric(value[key]);
+        if (parsed != null) {
+          return parsed;
+        }
+      }
+      return null;
+    }
+    return double.tryParse(value.toString());
+  }
+
+  UserProfile _mergeProfileWithStats(
+    UserProfile profile,
+    _ProfileStatistics stats,
+  ) {
+    final int? tripCount =
+        stats.didFetchTrips ? stats.tripCount : profile.tripCount;
+    final int? reviewsCount =
+        stats.didFetchReviews ? stats.reviewsCount : profile.reviewsCount;
+    double? rating;
+    if (stats.didFetchReviews) {
+      rating = stats.hasRatingSamples ? stats.rating : null;
+    } else {
+      rating = profile.rating;
+    }
+
+    return UserProfile(
+      id: profile.id,
+      displayName: profile.displayName,
+      email: profile.email,
+      phone: profile.phone,
+      photoUrl: profile.photoUrl,
+      tripCount: tripCount,
+      reviewsCount: reviewsCount,
+      rating: rating,
+    );
   }
 
   @override
@@ -74,41 +323,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .doc(_targetUserId)
           .get();
 
+      UserProfile? profile;
+
       if (snapshot.exists) {
-        final UserProfile profile = UserProfile.fromFirestoreSnapshot(snapshot);
-        setState(() {
-          _profile = profile;
-          _isLoading = false;
-        });
-        UserProfileCache.storeProfile(profile);
-        return;
+        profile = UserProfile.fromFirestoreSnapshot(snapshot);
+      } else {
+        final User? authUser = FirebaseAuth.instance.currentUser;
+        if (_isCurrentUser && authUser != null) {
+          profile = UserProfile(
+            id: authUser.uid,
+            displayName: UserProfile.sanitizeDisplayName(authUser.displayName),
+            email: UserProfile.sanitizeOptionalText(authUser.email),
+            phone: null,
+            photoUrl: UserProfile.sanitizePhotoUrl(authUser.photoURL),
+            tripCount: null,
+            reviewsCount: null,
+            rating: null,
+          );
+        }
       }
 
-      final User? authUser = FirebaseAuth.instance.currentUser;
-      if (_isCurrentUser && authUser != null) {
-        final UserProfile profile = UserProfile(
-          id: authUser.uid,
-          displayName: UserProfile.sanitizeDisplayName(authUser.displayName),
-          email: UserProfile.sanitizeOptionalText(authUser.email),
-          phone: null,
-          photoUrl: UserProfile.sanitizePhotoUrl(authUser.photoURL),
-          tripCount: null,
-          reviewsCount: null,
-          rating: null,
-        );
-        setState(() {
-          _profile = profile;
-          _isLoading = false;
-        });
-        UserProfileCache.storeProfile(profile);
-      } else {
+      if (profile == null) {
         setState(() {
           _isLoading = false;
           _errorMessage = 'لا توجد معلومات متاحة لهذا المستخدم';
         });
         UserProfileCache.markMissing(_targetUserId);
+        return;
       }
+
+      final _ProfileStatistics stats = await _loadProfileStatistics(profile.id);
+      final UserProfile enrichedProfile = _mergeProfileWithStats(profile, stats);
+
+      if (!mounted) return;
+      setState(() {
+        _profile = enrichedProfile;
+        _isLoading = false;
+      });
+      UserProfileCache.storeProfile(enrichedProfile);
     } catch (_) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _errorMessage = 'تعذّر تحميل الملف الشخصي.';
@@ -202,11 +456,235 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _handleEditProfile() {
-    if (!_isCurrentUser) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('ميزة تعديل الملف الشخصي ستتوفر قريبًا.'),
-      ),
+    if (!_isCurrentUser || _profile == null) return;
+
+    final UserProfile currentProfile = _profile!;
+    final TextEditingController nameController =
+        TextEditingController(text: currentProfile.displayName);
+    final TextEditingController phoneController =
+        TextEditingController(text: currentProfile.phone ?? '');
+    XFile? pendingImage;
+    Uint8List? previewBytes;
+    bool isSaving = false;
+    String? errorText;
+
+    Future<void> pickImage(StateSetter setStateDialog) async {
+      if (isSaving) return;
+      final ImagePicker picker = ImagePicker();
+      final XFile? selected = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxHeight: 1024,
+        maxWidth: 1024,
+      );
+      if (selected == null) {
+        return;
+      }
+      final Uint8List bytes = await selected.readAsBytes();
+      setStateDialog(() {
+        pendingImage = selected;
+        previewBytes = bytes;
+      });
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setStateDialog) {
+            final ThemeData theme = Theme.of(context);
+            final ColorScheme colorScheme = theme.colorScheme;
+
+            final ImageProvider<Object>? avatarImage;
+            if (previewBytes != null) {
+              avatarImage = MemoryImage(previewBytes!);
+            } else if (currentProfile.photoUrl != null) {
+              avatarImage = NetworkImage(currentProfile.photoUrl!);
+            } else {
+              avatarImage = null;
+            }
+
+            return AlertDialog(
+              title: const Text('تعديل الملف الشخصي'),
+              content: Directionality(
+                textDirection: TextDirection.rtl,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Center(
+                        child: Stack(
+                          alignment: Alignment.bottomRight,
+                          children: <Widget>[
+                            CircleAvatar(
+                              radius: 44,
+                              backgroundImage: avatarImage,
+                              backgroundColor:
+                                  colorScheme.primaryContainer.withOpacity(0.35),
+                              child: avatarImage == null
+                                  ? Text(
+                                      currentProfile.initial,
+                                      style: theme.textTheme.headlineSmall?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: colorScheme.primary,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            PositionedDirectional(
+                              bottom: 0,
+                              end: 0,
+                              child: IconButton(
+                                onPressed: isSaving
+                                    ? null
+                                    : () => pickImage(setStateDialog),
+                                style: IconButton.styleFrom(
+                                  backgroundColor: colorScheme.primary,
+                                  foregroundColor: Colors.white,
+                                ),
+                                icon: const Icon(Icons.camera_alt_rounded),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      TextField(
+                        controller: nameController,
+                        textDirection: TextDirection.rtl,
+                        enabled: !isSaving,
+                        decoration: const InputDecoration(
+                          labelText: 'الاسم',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: phoneController,
+                        textDirection: TextDirection.rtl,
+                        keyboardType: TextInputType.phone,
+                        enabled: !isSaving,
+                        decoration: const InputDecoration(
+                          labelText: 'رقم الهاتف',
+                        ),
+                      ),
+                      if (errorText != null) ...<Widget>[
+                        const SizedBox(height: 16),
+                        Text(
+                          errorText!,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.error,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: isSaving
+                      ? null
+                      : () {
+                          Navigator.of(dialogContext).pop();
+                        },
+                  child: const Text('إلغاء'),
+                ),
+                FilledButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          final String rawName = nameController.text.trim();
+                          if (rawName.isEmpty) {
+                            setStateDialog(() {
+                              errorText = 'الاسم مطلوب.';
+                            });
+                            return;
+                          }
+
+                          final String sanitizedName =
+                              UserProfile.sanitizeDisplayName(rawName);
+                          final String? sanitizedPhone =
+                              UserProfile.sanitizeOptionalText(
+                                  phoneController.text);
+
+                          setStateDialog(() {
+                            isSaving = true;
+                            errorText = null;
+                          });
+
+                          try {
+                            final Map<String, dynamic> updates = <String, dynamic>{
+                              'displayName': sanitizedName,
+                            };
+                            if (sanitizedPhone != null) {
+                              updates['phone'] = sanitizedPhone;
+                            } else {
+                              updates['phone'] = FieldValue.delete();
+                            }
+
+                            await FirebaseFirestore.instance
+                                .collection('users')
+                                .doc(currentProfile.id)
+                                .set(updates, SetOptions(merge: true));
+
+                            final User? authUser =
+                                FirebaseAuth.instance.currentUser;
+                            if (authUser != null &&
+                                authUser.uid == currentProfile.id) {
+                              await authUser.updateDisplayName(sanitizedName);
+                            }
+
+                            final UserProfile updatedProfile = UserProfile(
+                              id: currentProfile.id,
+                              displayName: sanitizedName,
+                              email: currentProfile.email,
+                              phone: sanitizedPhone,
+                              photoUrl: currentProfile.photoUrl,
+                              tripCount: currentProfile.tripCount,
+                              reviewsCount: currentProfile.reviewsCount,
+                              rating: currentProfile.rating,
+                            );
+
+                            if (mounted) {
+                              setState(() {
+                                _profile = updatedProfile;
+                              });
+                              UserProfileCache.storeProfile(updatedProfile);
+                            }
+
+                            if (pendingImage != null) {
+                              await _changePhoto(imageFile: pendingImage);
+                            }
+
+                            if (!mounted) return;
+                            Navigator.of(dialogContext).pop();
+                          } catch (_) {
+                            setStateDialog(() {
+                              isSaving = false;
+                              errorText =
+                                  'تعذّر حفظ التعديلات، حاول مرة أخرى.';
+                            });
+                          }
+                        },
+                  child: isSaving
+                      ? SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Theme.of(context).colorScheme.onPrimary,
+                            ),
+                          ),
+                        )
+                      : const Text('حفظ'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -521,13 +999,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Text('لا توجد معلومات لعرضها.'),
       );
     } else {
-      final String email = _profile!.email ?? 'لا يوجد بريد إلكتروني';
-      final String phone = _profile!.phone ?? 'لا يوجد رقم هاتف';
-      final int tripCount = _profile!.tripCount ?? 0;
-      final int reviewsCount = _profile!.reviewsCount ?? 0;
-      final String ratingValue = _profile!.rating != null
-          ? '${_profile!.rating!.toStringAsFixed(1)} ⭐'
-          : '--';
+      final String email = _profile!.email ?? 'غير متوفر';
+      final String phone = _profile!.phone ?? 'غير متوفر';
+      final int? tripCountValue = _profile!.tripCount;
+      final int? reviewsCountValue = _profile!.reviewsCount;
+      final double? ratingNumber = _profile!.rating;
+
+      final String tripCountText =
+          tripCountValue != null ? tripCountValue.toString() : 'غير متوفر';
+      final String reviewsCountText = reviewsCountValue != null
+          ? reviewsCountValue.toString()
+          : 'غير متوفر';
+      final String ratingValue = ratingNumber != null
+          ? '${ratingNumber.toStringAsFixed(1)} ⭐'
+          : 'غير متوفر';
 
       bodyContent = LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
@@ -584,7 +1069,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       child: _buildMetricTile(
                         icon: Icons.directions_car_filled_rounded,
                         label: 'الرحلات',
-                        value: tripCount.toString(),
+                        value: tripCountText,
                         theme: theme,
                       ),
                     ),
@@ -593,7 +1078,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       child: _buildMetricTile(
                         icon: Icons.people_alt_rounded,
                         label: 'التقييمات المستلمة',
-                        value: reviewsCount.toString(),
+                        value: reviewsCountText,
                         theme: theme,
                       ),
                     ),
@@ -613,14 +1098,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _buildMetricTile(
                       icon: Icons.directions_car_filled_rounded,
                       label: 'الرحلات',
-                      value: tripCount.toString(),
+                      value: tripCountText,
                       theme: theme,
                     ),
                     const SizedBox(height: 16),
                     _buildMetricTile(
                       icon: Icons.people_alt_rounded,
                       label: 'التقييمات المستلمة',
-                      value: reviewsCount.toString(),
+                      value: reviewsCountText,
                       theme: theme,
                     ),
                     const SizedBox(height: 16),
