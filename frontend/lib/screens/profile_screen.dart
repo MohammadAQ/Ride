@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:desktop_drop/desktop_drop.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
@@ -51,7 +50,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isUpdatingPhoto = false;
   String? _errorMessage;
   late final String _targetUserId;
-  bool _isDropHovering = false;
 
   bool get _isCurrentUser {
     final User? currentUser = FirebaseAuth.instance.currentUser;
@@ -442,19 +440,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _onDropFiles(List<XFile> files) async {
-    if (!_isCurrentUser || _isUpdatingPhoto) {
-      return;
-    }
-    setState(() {
-      _isDropHovering = false;
-    });
-    if (files.isEmpty) {
-      return;
-    }
-    await _changePhoto(imageFile: files.first);
-  }
-
   void _handleEditProfile() {
     if (!_isCurrentUser || _profile == null) return;
 
@@ -726,18 +711,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final Widget decoratedAvatar = AnimatedContainer(
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeInOut,
-      padding: EdgeInsets.all(_isDropHovering ? 8 : 4),
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: _isDropHovering
-            ? LinearGradient(
-                colors: <Color>[
-                  colorScheme.primary,
-                  colorScheme.secondary,
-                ],
-              )
-            : null,
-        color: _isDropHovering ? null : colorScheme.surface,
+        color: colorScheme.surface,
         boxShadow: <BoxShadow>[
           BoxShadow(
             color: colorScheme.primary.withOpacity(0.2),
@@ -763,33 +740,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       alignment: Alignment.center,
       children: <Widget>[
         decoratedAvatar,
-        if (_isDropHovering && !_isUpdatingPhoto)
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: colorScheme.surface.withOpacity(0.65),
-                ),
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: colorScheme.surface,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      'أفلت الصورة هنا',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
         Positioned.fill(
           child: IgnorePointer(
             child: AnimatedOpacity(
@@ -843,29 +793,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ],
     );
 
-    return DropTarget(
-      enable: !_isUpdatingPhoto,
-      onDragEntered: (DropEventDetails _) {
-        if (_isUpdatingPhoto) return;
-        setState(() {
-          _isDropHovering = true;
-        });
-      },
-      onDragExited: (DropEventDetails _) {
-        if (_isDropHovering) {
-          setState(() {
-            _isDropHovering = false;
-          });
-        }
-      },
-      onDragDone: (DropDoneDetails detail) => _onDropFiles(detail.files),
-      child: MouseRegion(
-        cursor:
-            _isUpdatingPhoto ? SystemMouseCursors.basic : SystemMouseCursors.click,
-        child: GestureDetector(
-          onDoubleTap: _isUpdatingPhoto ? null : () => _changePhoto(),
-          child: interactiveAvatar,
-        ),
+    return MouseRegion(
+      cursor: _isUpdatingPhoto ? SystemMouseCursors.basic : SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: _isUpdatingPhoto ? null : () => _changePhoto(),
+        onDoubleTap: _isUpdatingPhoto ? null : () => _changePhoto(),
+        child: interactiveAvatar,
       ),
     );
   }
