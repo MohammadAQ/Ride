@@ -158,6 +158,37 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
     return stringValue;
   }
 
+  String? _resolveTripDriverId(Map<String, dynamic> trip) {
+    final directId = _stringOrNull(trip['driverId']);
+    if (directId != null) {
+      return directId;
+    }
+
+    final snakeCaseId = _stringOrNull(trip['driver_id']);
+    if (snakeCaseId != null) {
+      return snakeCaseId;
+    }
+
+    final upperCamelCaseId = _stringOrNull(trip['driverID']);
+    if (upperCamelCaseId != null) {
+      return upperCamelCaseId;
+    }
+
+    final driverData = trip['driver'];
+    if (driverData is Map) {
+      final driverMap = driverData.map((key, value) => MapEntry(key.toString(), value));
+      final nestedId = _stringOrNull(driverMap['id']) ??
+          _stringOrNull(driverMap['uid']) ??
+          _stringOrNull(driverMap['userId']) ??
+          _stringOrNull(driverMap['user_id']);
+      if (nestedId != null) {
+        return nestedId;
+      }
+    }
+
+    return _stringOrNull(driverData);
+  }
+
   DateTime? _parseTripDateTime(Map<String, dynamic> trip) {
     final dateString = _stringOrNull(trip['date']);
     if (dateString == null) {
@@ -364,7 +395,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
 
   void _showTripOptions(Map<String, dynamic> trip) {
     final user = FirebaseAuth.instance.currentUser;
-    final driverId = _stringOrNull(trip['driverId']);
+    final driverId = _resolveTripDriverId(trip);
 
     if (user == null || driverId == null || driverId != user.uid) {
       ScaffoldMessenger.of(context).showSnackBar(
