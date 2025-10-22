@@ -5,7 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'package:carpal_app/models/user_profile.dart';
-import 'package:carpal_app/screens/profile_screen.dart';
+import 'package:carpal_app/services/user_profile_cache.dart';
+import 'package:carpal_app/utils/profile_navigation.dart';
 
 class GlobalChatScreen extends StatefulWidget {
   const GlobalChatScreen({super.key, this.showAppBar = true});
@@ -372,47 +373,10 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
                 if (senderId.isEmpty) {
                   return;
                 }
-                final bool openEditable = isCurrentUser;
-                Navigator.of(context).push(
-                  PageRouteBuilder<void>(
-                    pageBuilder: (
-                      BuildContext context,
-                      Animation<double> animation,
-                      Animation<double> secondaryAnimation,
-                    ) {
-                      return ProfileScreen(
-                        userId: openEditable ? null : senderId,
-                        initialProfile: profile,
-                      );
-                    },
-                    transitionsBuilder: (
-                      BuildContext context,
-                      Animation<double> animation,
-                      Animation<double> secondaryAnimation,
-                      Widget child,
-                    ) {
-                      final Animation<Offset> offsetAnimation = Tween<Offset>(
-                        begin: const Offset(1, 0),
-                        end: Offset.zero,
-                      ).animate(
-                        CurvedAnimation(
-                          parent: animation,
-                          curve: Curves.easeInOut,
-                        ),
-                      );
-                      return SlideTransition(
-                        position: offsetAnimation,
-                        child: FadeTransition(
-                          opacity: CurvedAnimation(
-                            parent: animation,
-                            curve: Curves.easeOut,
-                          ),
-                          child: child,
-                        ),
-                      );
-                    },
-                    transitionDuration: const Duration(milliseconds: 280),
-                  ),
+                ProfileNavigation.pushProfile(
+                  context: context,
+                  userId: senderId,
+                  initialProfile: profile,
                 );
               },
             );
@@ -740,27 +704,27 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     String senderId,
     Map<String, dynamic> messageData,
   ) async {
+    if (_pendingProfileRequests.contains(senderId)) {
+      return;
+    }
+
+    final UserProfile? cachedProfile = UserProfileCache.get(senderId);
+    final bool hasCacheEntry = UserProfileCache.hasEntry(senderId);
+    if (cachedProfile != null || hasCacheEntry) {
+      if (!mounted) return;
+      setState(() {
+        _userProfiles[senderId] = cachedProfile ??
+            _userProfileFromMessageData(senderId, messageData);
+      });
+      return;
+    }
+
     _pendingProfileRequests.add(senderId);
     try {
-      final DocumentSnapshot<Map<String, dynamic>> snapshot = await FirebaseFirestore
-          .instance
-          .collection('users')
-          .doc(senderId)
-          .get();
-
-      if (!mounted) return;
-
-      final UserProfile profile = snapshot.exists
-          ? UserProfile.fromFirestoreSnapshot(snapshot)
-          : _userProfileFromMessageData(senderId, messageData);
-
-      setState(() {
-        _userProfiles[senderId] = profile;
-      });
-    } catch (_) {
+      final UserProfile? profile = await UserProfileCache.fetch(senderId);
       if (!mounted) return;
       setState(() {
-        _userProfiles[senderId] =
+        _userProfiles[senderId] = profile ??
             _userProfileFromMessageData(senderId, messageData);
       });
     } finally {
