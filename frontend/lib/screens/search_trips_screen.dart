@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:carpal_app/models/user_profile.dart';
+import 'package:carpal_app/widgets/user_profile_preview.dart';
+
 import '../services/api_service.dart';
 
 const MethodChannel _phoneLauncherChannel =
@@ -133,7 +136,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     final priceText = _formatPrice(data['price']);
     final notesValue = data['notes'];
     final notes = notesValue == null ? null : notesValue.toString().trim();
-    final driverName = (data['driverName'] ?? '').toString();
+    final String driverId = _resolveDriverId(data) ?? '';
+    final String driverName = _resolveDriverName(data);
     final carModel = (data['carModel'] ?? '').toString();
     final carColor = (data['carColor'] ?? '').toString();
     final phoneNumber = (data['phoneNumber'] ?? '').toString();
@@ -346,13 +350,40 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                   value: priceText,
                 ),
                 const SizedBox(height: 16),
-                buildDetailRow(
-                  leading: Text(
-                    '👤',
-                    style: theme.textTheme.titleLarge,
+                Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '👤',
+                          style: theme.textTheme.titleLarge,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('السائق', style: labelStyle),
+                              const SizedBox(height: 8),
+                              UserProfilePreview(
+                                userId: driverId,
+                                fallbackName: driverName,
+                                avatarRadius: 26,
+                                textStyle: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: colorScheme.onSurface,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  label: 'اسم السائق',
-                  value: driverName,
                 ),
                 const SizedBox(height: 16),
                 buildDetailRow(
@@ -651,6 +682,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
         final toCity = (data['toCity'] ?? '').toString().trim();
         final dateText = _formatDate(data['date']);
         final priceText = _formatPrice(data['price']);
+        final String driverId = _resolveDriverId(data) ?? '';
+        final String driverName = _resolveDriverName(data);
 
         children.add(
           Padding(
@@ -660,6 +693,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
               toCity: toCity.isEmpty ? 'غير متوفر' : toCity,
               date: dateText.isEmpty ? 'غير متوفر' : dateText,
               price: priceText,
+              driverId: driverId,
+              driverName: driverName,
               notes: (data['notes'] ?? '').toString().trim().isEmpty
                   ? null
                   : (data['notes'] ?? '').toString(),
@@ -693,6 +728,80 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
       children: children,
     );
+  }
+
+  String? _stringOrNull(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+    final String text = value.toString().trim();
+    if (text.isEmpty) {
+      return null;
+    }
+    return text;
+  }
+
+  String? _resolveDriverId(Map<String, dynamic> data) {
+    final String? direct = _stringOrNull(data['driverId']);
+    if (direct != null) {
+      return direct;
+    }
+
+    final String? snakeCase = _stringOrNull(data['driver_id']);
+    if (snakeCase != null) {
+      return snakeCase;
+    }
+
+    final String? camelCase = _stringOrNull(data['driverID']);
+    if (camelCase != null) {
+      return camelCase;
+    }
+
+    final dynamic driverData = data['driver'];
+    if (driverData is Map) {
+      final Map<String, dynamic> driverMap = driverData.map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+      final String? nestedId = _stringOrNull(driverMap['id']) ??
+          _stringOrNull(driverMap['uid']) ??
+          _stringOrNull(driverMap['userId']) ??
+          _stringOrNull(driverMap['user_id']);
+      if (nestedId != null) {
+        return nestedId;
+      }
+    }
+
+    return _stringOrNull(driverData);
+  }
+
+  String _resolveDriverName(Map<String, dynamic> data) {
+    final String? direct = _stringOrNull(data['driverName']);
+    if (direct != null) {
+      return UserProfile.sanitizeDisplayName(direct);
+    }
+
+    final dynamic driverData = data['driver'];
+    if (driverData is Map) {
+      final Map<String, dynamic> driverMap = driverData.map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+      final String? nestedName = _stringOrNull(driverMap['displayName']) ??
+          _stringOrNull(driverMap['name']) ??
+          _stringOrNull(driverMap['fullName']) ??
+          _stringOrNull(driverMap['username']);
+      if (nestedName != null) {
+        return UserProfile.sanitizeDisplayName(nestedName);
+      }
+    }
+
+    if (driverData is String) {
+      final String? text = _stringOrNull(driverData);
+      if (text != null) {
+        return UserProfile.sanitizeDisplayName(text);
+      }
+    }
+
+    return 'غير متوفر';
   }
 
   String _formatDate(dynamic date) {
@@ -750,6 +859,8 @@ class TripCard extends StatelessWidget {
     required this.toCity,
     required this.date,
     required this.price,
+    required this.driverId,
+    required this.driverName,
     this.notes,
     this.onTap,
   });
@@ -758,6 +869,8 @@ class TripCard extends StatelessWidget {
   final String toCity;
   final String date;
   final String price;
+  final String driverId;
+  final String driverName;
   final String? notes;
   final VoidCallback? onTap;
 
@@ -781,6 +894,35 @@ class TripCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (driverId.trim().isNotEmpty || driverName.trim().isNotEmpty) ...[
+                Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'السائق',
+                        style: textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      UserProfilePreview(
+                        userId: driverId,
+                        fallbackName: driverName,
+                        avatarRadius: 22,
+                        textStyle: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               Directionality(
                 textDirection: TextDirection.rtl,
                 child: Row(

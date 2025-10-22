@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:carpal_app/models/user_profile.dart';
 import 'package:carpal_app/screens/login_screen.dart';
+import 'package:carpal_app/services/user_profile_cache.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -77,6 +78,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _profile = profile;
           _isLoading = false;
         });
+        UserProfileCache.storeProfile(profile);
         return;
       }
 
@@ -95,11 +97,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _profile = profile;
           _isLoading = false;
         });
+        UserProfileCache.storeProfile(profile);
       } else {
         setState(() {
           _isLoading = false;
           _errorMessage = 'لا توجد معلومات متاحة لهذا المستخدم';
         });
+        UserProfileCache.markMissing(_targetUserId);
       }
     } catch (_) {
       setState(() {
@@ -162,6 +166,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _profile = _profile!.copyWith(photoUrl: downloadUrl);
         _isUpdatingPhoto = false;
       });
+      UserProfileCache.storeProfile(_profile!);
     } catch (_) {
       if (!mounted) return;
       setState(() {
