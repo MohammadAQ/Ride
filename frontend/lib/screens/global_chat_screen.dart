@@ -23,16 +23,33 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
 
   DateTime? _lastSentAt;
   String? _lastSentMessage;
-  int _previousMessageCount = 0;
   bool _isSyncingProfile = false;
 
   final Map<String, UserProfile> _userProfiles = <String, UserProfile>{};
-  final Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>
-      _profileSubscriptions =
-      <String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>{};
+  final Set<String> _pendingProfileRequests = <String>{};
 
   static const int _maxMessageLength = 250;
   static const Duration _rateLimitDuration = Duration(seconds: 3);
+  static const int _pageSize = 10;
+
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> _messages =
+      <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+  final Set<String> _animatedMessageIds = <String>{};
+
+  bool _isLoadingInitial = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  String? _initialLoadError;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+      _latestMessagesSubscription;
+  DocumentSnapshot<Map<String, dynamic>>? _lastLoadedDocument;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    _loadInitialMessages();
+  }
 
   static const List<String> _bannedWords = <String>[
     'badword',
@@ -42,13 +59,11 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
 
   @override
   void dispose() {
+    _latestMessagesSubscription?.cancel();
     _messageController.dispose();
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _messageFocusNode.dispose();
-    for (final StreamSubscription<DocumentSnapshot<Map<String, dynamic>>> sub
-        in _profileSubscriptions.values) {
-      sub.cancel();
-    }
     super.dispose();
   }
 
@@ -247,112 +262,7 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
       child: Column(
         children: <Widget>[
           Expanded(
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: FirebaseFirestore.instance
-                    .collection('global_chat')
-                    .orderBy('timestamp', descending: false)
-                    .snapshots(),
-                builder: (
-                  BuildContext context,
-                  AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot,
-                ) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Text('حدث خطأ: ${snapshot.error}'),
-                    );
-                  }
-
-                  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
-                      snapshot.data?.docs ?? <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-
-                  if (docs.isEmpty) {
-                    return const Center(
-                      child: Text('ابدأ المحادثة الآن 👋'),
-                    );
-                  }
-
-                  if (docs.length != _previousMessageCount) {
-                    _previousMessageCount = docs.length;
-                    _scrollToBottom();
-                  }
-
-                  _preloadProfiles(docs);
-
-                  return ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(16),
-                    itemCount: docs.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      final QueryDocumentSnapshot<Map<String, dynamic>> doc =
-                          docs[index];
-                      final Map<String, dynamic>? data = doc.data();
-                      if (data == null) {
-                        return const SizedBox.shrink();
-                      }
-
-                      final String senderId =
-                          (data['senderId'] as String?)?.trim() ?? '';
-                      final UserProfile profile = _userProfiles[senderId] ??
-                          _userProfileFromMessageData(senderId, data);
-
-                      return _MessageBubble(
-                        data: data,
-                        profile: profile,
-                        isCurrentUser: data['senderId'] == currentUser.uid,
-                        onLongPress: () async {
-                          final bool? shouldReport = await showDialog<bool>(
-                            context: context,
-                            builder: (BuildContext context) {
-                              return AlertDialog(
-                                title: const Text('إبلاغ عن الرسالة'),
-                                content: const Text('هل تريد الإبلاغ عن هذه الرسالة؟'),
-                                actions: <Widget>[
-                                  TextButton(
-                                    onPressed: () => Navigator.of(context).pop(false),
-                                    child: const Text('إلغاء'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () => Navigator.of(context).pop(true),
-                                    child: const Text('إبلاغ'),
-                                  ),
-                                ],
-                              );
-                            },
-                          );
-
-                          if (shouldReport == true) {
-                            await _reportMessage(messageId: doc.id, data: data);
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('تم إرسال البلاغ.'),
-                                ),
-                              );
-                            }
-                          }
-                        },
-                        onProfileTap: () {
-                          if (senderId.isEmpty) {
-                            return;
-                          }
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => ProfileScreen(
-                                userId: senderId,
-                                initialProfile: profile,
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  );
-                },
-              ),
+            child: _buildMessagesList(currentUser),
           ),
           _MessageInput(
             controller: _messageController,
@@ -376,35 +286,399 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     }
 
     return chatContent;
-}
+  }
 
-  void _preloadProfiles(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in docs) {
-      final Map<String, dynamic>? data = doc.data();
-      if (data == null) continue;
-      final String senderId = (data['senderId'] as String?)?.trim() ?? '';
-      if (senderId.isEmpty || _profileSubscriptions.containsKey(senderId)) {
-        continue;
-      }
+  Widget _buildMessagesList(User currentUser) {
+    if (_isLoadingInitial) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-      final StreamSubscription<DocumentSnapshot<Map<String, dynamic>>> sub =
-          FirebaseFirestore.instance
-              .collection('users')
-              .doc(senderId)
-              .snapshots()
-              .listen((DocumentSnapshot<Map<String, dynamic>> snapshot) {
-        final UserProfile profile =
-            UserProfile.fromFirestoreSnapshot(snapshot);
-        if (!mounted) return;
-        setState(() {
-          _userProfiles[senderId] = profile;
-        });
+    if (_initialLoadError != null) {
+      return Center(
+        child: Text(
+          _initialLoadError!,
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    if (_messages.isEmpty) {
+      return const Center(
+        child: Text('ابدأ المحادثة الآن 👋'),
+      );
+    }
+
+    return Stack(
+      children: <Widget>[
+        ListView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.all(16),
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+          itemCount: _messages.length,
+          itemBuilder: (BuildContext context, int index) {
+            final QueryDocumentSnapshot<Map<String, dynamic>> doc = _messages[index];
+            final Map<String, dynamic> data = doc.data();
+            final String senderId =
+                (data['senderId'] as String?)?.trim() ?? '';
+            final bool isCurrentUser = senderId == currentUser.uid;
+            final UserProfile profile =
+                _userProfiles[senderId] ?? _userProfileFromMessageData(senderId, data);
+            final bool animate = _animatedMessageIds.remove(doc.id);
+
+            return _MessageBubble(
+              key: ValueKey<String>('msg-${doc.id}'),
+              data: data,
+              profile: profile,
+              isCurrentUser: isCurrentUser,
+              animate: animate,
+              onLongPress: () async {
+                final bool? shouldReport = await showDialog<bool>(
+                  context: context,
+                  builder: (BuildContext context) {
+                    return AlertDialog(
+                      title: const Text('إبلاغ عن الرسالة'),
+                      content: const Text('هل تريد الإبلاغ عن هذه الرسالة؟'),
+                      actions: <Widget>[
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('إلغاء'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: const Text('إبلاغ'),
+                        ),
+                      ],
+                    );
+                  },
+                );
+
+                if (shouldReport == true) {
+                  await _reportMessage(messageId: doc.id, data: data);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('تم إرسال البلاغ.'),
+                    ),
+                  );
+                }
+              },
+              onProfileTap: () {
+                if (senderId.isEmpty) {
+                  return;
+                }
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ProfileScreen(
+                      userId: senderId,
+                      initialProfile: profile,
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+        if (_isLoadingMore)
+          Positioned(
+            top: 12,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Text('... جاري تحميل رسائل أقدم'),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients || _isLoadingMore || !_hasMore) {
+      return;
+    }
+
+    final double currentOffset = _scrollController.position.pixels;
+    final double minOffset = _scrollController.position.minScrollExtent;
+    if (currentOffset <= minOffset + 80) {
+      _loadOlderMessages();
+    }
+  }
+
+  bool get _isAtBottom {
+    if (!_scrollController.hasClients) {
+      return true;
+    }
+    final double maxOffset = _scrollController.position.maxScrollExtent;
+    final double currentOffset = _scrollController.position.pixels;
+    return (maxOffset - currentOffset) <= 80;
+  }
+
+  Future<void> _loadInitialMessages() async {
+    _latestMessagesSubscription?.cancel();
+    if (mounted) {
+      setState(() {
+        _isLoadingInitial = true;
+        _initialLoadError = null;
+        _hasMore = true;
+        _messages.clear();
+        _animatedMessageIds.clear();
+        _lastLoadedDocument = null;
+      });
+    }
+
+    try {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await FirebaseFirestore
+          .instance
+          .collection('global_chat')
+          .orderBy('timestamp', descending: true)
+          .limit(_pageSize)
+          .get();
+
+      if (!mounted) return;
+
+      setState(() {
+        _messages
+          ..clear()
+          ..addAll(snapshot.docs.reversed);
+        _messages.sort(_compareMessages);
+        _lastLoadedDocument =
+            snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
+        _hasMore = snapshot.docs.length == _pageSize;
+        _isLoadingInitial = false;
+        _initialLoadError = null;
       });
 
-      _profileSubscriptions[senderId] = sub;
+      _warmProfileCache(_messages);
+      _listenForLatestMessages();
+      _scrollToBottom();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _initialLoadError = 'تعذّر تحميل الرسائل، حاول مرة أخرى لاحقًا.';
+        _isLoadingInitial = false;
+      });
     }
+  }
+
+  Future<void> _loadOlderMessages() async {
+    if (_isLoadingMore || !_hasMore || _lastLoadedDocument == null) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await FirebaseFirestore
+          .instance
+          .collection('global_chat')
+          .orderBy('timestamp', descending: true)
+          .startAfterDocument(_lastLoadedDocument!)
+          .limit(_pageSize)
+          .get();
+
+      if (!mounted) return;
+
+      if (snapshot.docs.isEmpty) {
+        setState(() {
+          _hasMore = false;
+          _isLoadingMore = false;
+        });
+        return;
+      }
+
+      final double previousMaxExtent = _scrollController.hasClients
+          ? _scrollController.position.maxScrollExtent
+          : 0;
+      final double previousOffset = _scrollController.hasClients
+          ? _scrollController.offset
+          : 0;
+
+      setState(() {
+        _messages.insertAll(0, snapshot.docs.reversed);
+        _messages.sort(_compareMessages);
+        _lastLoadedDocument = snapshot.docs.last;
+        _hasMore = snapshot.docs.length == _pageSize;
+        _isLoadingMore = false;
+      });
+
+      _warmProfileCache(snapshot.docs);
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_scrollController.hasClients) {
+          return;
+        }
+        final double newMaxExtent = _scrollController.position.maxScrollExtent;
+        final double diff = newMaxExtent - previousMaxExtent;
+        final double targetOffset = previousOffset + diff;
+        final double minExtent = _scrollController.position.minScrollExtent;
+        final double maxExtent = _scrollController.position.maxScrollExtent;
+        final double clampedOffset =
+            targetOffset.clamp(minExtent, maxExtent).toDouble();
+        _scrollController.jumpTo(clampedOffset);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingMore = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذّر تحميل الرسائل الأقدم.'),
+        ),
+      );
+    }
+  }
+
+  void _listenForLatestMessages() {
+    _latestMessagesSubscription?.cancel();
+    _latestMessagesSubscription = FirebaseFirestore.instance
+        .collection('global_chat')
+        .orderBy('timestamp', descending: true)
+        .limit(_pageSize)
+        .snapshots()
+        .listen(_handleLatestSnapshot);
+  }
+
+  void _handleLatestSnapshot(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    if (!mounted || snapshot.docs.isEmpty) {
+      return;
+    }
+
+    final bool shouldAutoScroll = _isAtBottom;
+    bool updated = false;
+    final List<QueryDocumentSnapshot<Map<String, dynamic>>> docsToWarm =
+        <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+
+    setState(() {
+      for (final DocumentChange<Map<String, dynamic>> change
+          in snapshot.docChanges) {
+        final QueryDocumentSnapshot<Map<String, dynamic>> doc = change.doc;
+        docsToWarm.add(doc);
+
+        if (change.type == DocumentChangeType.added) {
+          final bool exists =
+              _messages.any((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+                  d.id == doc.id);
+          if (!exists) {
+            _messages.add(doc);
+            _animatedMessageIds.add(doc.id);
+            updated = true;
+          }
+        } else if (change.type == DocumentChangeType.modified) {
+          final int index = _messages.indexWhere(
+              (QueryDocumentSnapshot<Map<String, dynamic>> d) => d.id == doc.id);
+          if (index != -1) {
+            _messages[index] = doc;
+            updated = true;
+          }
+        } else if (change.type == DocumentChangeType.removed) {
+          final int index = _messages.indexWhere(
+              (QueryDocumentSnapshot<Map<String, dynamic>> d) => d.id == doc.id);
+          if (index != -1) {
+            _messages.removeAt(index);
+            updated = true;
+          }
+        }
+      }
+
+      if (updated) {
+        _messages.sort(_compareMessages);
+      }
+    });
+
+    if (docsToWarm.isNotEmpty) {
+      _warmProfileCache(docsToWarm);
+    }
+
+    if (updated && shouldAutoScroll) {
+      _scrollToBottom();
+    }
+  }
+
+  void _warmProfileCache(
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in docs) {
+      final Map<String, dynamic> data = doc.data();
+      final String senderId = (data['senderId'] as String?)?.trim() ?? '';
+      if (senderId.isEmpty) {
+        continue;
+      }
+      if (_userProfiles.containsKey(senderId) ||
+          _pendingProfileRequests.contains(senderId)) {
+        continue;
+      }
+      _fetchUserProfile(senderId, data);
+    }
+  }
+
+  Future<void> _fetchUserProfile(
+    String senderId,
+    Map<String, dynamic> messageData,
+  ) async {
+    _pendingProfileRequests.add(senderId);
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await FirebaseFirestore
+          .instance
+          .collection('users')
+          .doc(senderId)
+          .get();
+
+      if (!mounted) return;
+
+      final UserProfile profile = snapshot.exists
+          ? UserProfile.fromFirestoreSnapshot(snapshot)
+          : _userProfileFromMessageData(senderId, messageData);
+
+      setState(() {
+        _userProfiles[senderId] = profile;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _userProfiles[senderId] =
+            _userProfileFromMessageData(senderId, messageData);
+      });
+    } finally {
+      _pendingProfileRequests.remove(senderId);
+    }
+  }
+
+  int _compareMessages(
+    QueryDocumentSnapshot<Map<String, dynamic>> a,
+    QueryDocumentSnapshot<Map<String, dynamic>> b,
+  ) {
+    final Timestamp? aTimestamp = a.data()['timestamp'] as Timestamp?;
+    final Timestamp? bTimestamp = b.data()['timestamp'] as Timestamp?;
+    if (aTimestamp == null && bTimestamp == null) {
+      return a.id.compareTo(b.id);
+    }
+    if (aTimestamp == null) {
+      return -1;
+    }
+    if (bTimestamp == null) {
+      return 1;
+    }
+    return aTimestamp.compareTo(bTimestamp);
   }
 
   UserProfile _userProfileFromMessageData(
@@ -428,11 +702,13 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
 
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
+    super.key,
     required this.data,
     required this.profile,
     required this.isCurrentUser,
     this.onLongPress,
     this.onProfileTap,
+    this.animate = false,
   });
 
   final Map<String, dynamic> data;
@@ -440,6 +716,7 @@ class _MessageBubble extends StatelessWidget {
   final bool isCurrentUser;
   final VoidCallback? onLongPress;
   final VoidCallback? onProfileTap;
+  final bool animate;
 
   @override
   Widget build(BuildContext context) {
@@ -454,7 +731,7 @@ class _MessageBubble extends StatelessWidget {
         : Colors.grey.shade200;
     final Color textColor = isCurrentUser ? Colors.white : Colors.black87;
 
-    return Padding(
+    final Widget content = Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         mainAxisAlignment:
@@ -526,6 +803,26 @@ class _MessageBubble extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    if (!animate) {
+      return content;
+    }
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      child: content,
+      builder: (BuildContext context, double value, Widget? child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 12 * (1 - value)),
+            child: child,
+          ),
+        );
+      },
     );
   }
 }

@@ -21,10 +21,16 @@ class UserProfile {
 
   String get initial {
     final String trimmed = displayName.trim();
-    if (trimmed.isEmpty) {
-      return '?';
+    if (trimmed.isNotEmpty &&
+        trimmed != 'مستخدم' &&
+        trimmed.toLowerCase() != 'user') {
+      return trimmed[0].toUpperCase();
     }
-    return trimmed[0].toUpperCase();
+    final String trimmedId = id.trim();
+    if (trimmedId.isNotEmpty) {
+      return trimmedId[0].toUpperCase();
+    }
+    return '?';
   }
 
   UserProfile copyWith({
