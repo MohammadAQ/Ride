@@ -801,7 +801,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       }
     }
 
-    return 'غير متوفر';
+    return 'مستخدم';
   }
 
   String _formatDate(dynamic date) {

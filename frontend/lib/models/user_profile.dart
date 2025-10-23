@@ -60,7 +60,7 @@ class UserProfile {
     return UserProfile(
       id: id,
       displayName: sanitizeDisplayName(data['displayName']),
-      email: sanitizeOptionalText(data['email']),
+      email: null,
       phone: sanitizeOptionalText(data['phone']),
       photoUrl: _sanitizeUrl(data['photoUrl']),
       tripCount: _toInt(data['tripCount'] ?? data['tripsCount']),
@@ -76,7 +76,11 @@ class UserProfile {
   }
 
   static String sanitizeDisplayName(dynamic value) {
-    return sanitizeOptionalText(value) ?? 'مستخدم';
+    final String? sanitized = sanitizeOptionalText(value);
+    if (sanitized == null || _looksLikeEmail(sanitized)) {
+      return 'مستخدم';
+    }
+    return sanitized;
   }
 
   static String? sanitizeOptionalText(dynamic value) {
@@ -114,5 +118,9 @@ class UserProfile {
     if (value is double) return value;
     if (value is int) return value.toDouble();
     return double.tryParse(value.toString());
+  }
+
+  static bool _looksLikeEmail(String value) {
+    return RegExp(r'[^\s@]+@[^\s@]+\.[^\s@]+').hasMatch(value);
   }
 }

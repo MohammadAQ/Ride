@@ -350,6 +350,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return;
       }
 
+      if (_isCurrentUser) {
+        final User? authUser = FirebaseAuth.instance.currentUser;
+        final String? authEmail =
+            UserProfile.sanitizeOptionalText(authUser?.email);
+        profile = UserProfile(
+          id: profile.id,
+          displayName: profile.displayName,
+          email: authEmail,
+          phone: profile.phone,
+          photoUrl: profile.photoUrl,
+          tripCount: profile.tripCount,
+          reviewsCount: profile.reviewsCount,
+          rating: profile.rating,
+        );
+      }
+
       final _ProfileStatistics stats = await _loadProfileStatistics(profile.id);
       final UserProfile enrichedProfile = _mergeProfileWithStats(profile, stats);
 
@@ -932,7 +948,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Text('لا توجد معلومات لعرضها.'),
       );
     } else {
-      final String email = _profile!.email ?? 'غير متوفر';
+      final String? email = _isCurrentUser ? _profile!.email : null;
       final String phone = _profile!.phone ?? 'غير متوفر';
       final int? tripCountValue = _profile!.tripCount;
       final int? reviewsCountValue = _profile!.reviewsCount;
@@ -958,15 +974,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final Widget contactTiles = isWide
               ? Row(
                   children: <Widget>[
-                    Expanded(
-                      child: _buildInfoTile(
-                        icon: Icons.email_rounded,
-                        label: 'البريد الإلكتروني',
-                        value: email,
-                        theme: theme,
+                    if (_isCurrentUser) ...[
+                      Expanded(
+                        child: _buildInfoTile(
+                          icon: Icons.email_rounded,
+                          label: 'البريد الإلكتروني',
+                          value: email ?? 'غير متوفر',
+                          theme: theme,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 16),
+                      const SizedBox(width: 16),
+                    ],
                     Expanded(
                       child: _buildInfoTile(
                         icon: Icons.phone_rounded,
@@ -979,13 +997,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 )
               : Column(
                   children: <Widget>[
-                    _buildInfoTile(
-                      icon: Icons.email_rounded,
-                      label: 'البريد الإلكتروني',
-                      value: email,
-                      theme: theme,
-                    ),
-                    const SizedBox(height: 16),
+                    if (_isCurrentUser) ...[
+                      _buildInfoTile(
+                        icon: Icons.email_rounded,
+                        label: 'البريد الإلكتروني',
+                        value: email ?? 'غير متوفر',
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     _buildInfoTile(
                       icon: Icons.phone_rounded,
                       label: 'رقم الهاتف',
