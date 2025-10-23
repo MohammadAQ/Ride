@@ -1,3 +1,5 @@
+import 'user_profile.dart';
+
 class Trip {
   const Trip({
     required this.id,
@@ -35,7 +37,7 @@ class Trip {
     return Trip({
       id: json['id']?.toString() ?? '',
       driverId: json['driverId']?.toString() ?? '',
-      driverName: json['driverName']?.toString() ?? '',
+      driverName: UserProfile.sanitizeDisplayName(json['driverName']),
       fromCity: json['fromCity']?.toString() ?? '',
       toCity: json['toCity']?.toString() ?? '',
       date: DateTime.tryParse(json['date']?.toString() ?? '') ?? DateTime.now(),

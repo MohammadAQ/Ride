@@ -1,6 +1,22 @@
 import admin from 'firebase-admin';
 import { config } from './env.js';
 
+const looksLikeEmail = (value: string): boolean => /[^\s@]+@[^\s@]+\.[^\s@]+/.test(value);
+
+const sanitizeName = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed || looksLikeEmail(trimmed)) {
+    return undefined;
+  }
+
+  return trimmed;
+};
+
 const createMockDecodedToken = (token: string): admin.auth.DecodedIdToken => {
   if (!token) {
     throw new Error('Token cannot be empty');
@@ -8,6 +24,8 @@ const createMockDecodedToken = (token: string): admin.auth.DecodedIdToken => {
 
   if (token.startsWith('mock:')) {
     const [, uid = '', email, name] = token.split(':');
+
+    const sanitizedName = sanitizeName(name);
 
     if (!uid) {
       throw new Error('Mock tokens must follow the format "mock:<uid>[:<email>[:<name>]]".');
@@ -18,7 +36,7 @@ const createMockDecodedToken = (token: string): admin.auth.DecodedIdToken => {
     return {
       uid,
       email: email ?? null,
-      name: name ?? email ?? uid,
+      name: sanitizedName,
       aud: 'mock',
       auth_time: issuedAt,
       exp: issuedAt + 60 * 60,
@@ -38,10 +56,12 @@ const createMockDecodedToken = (token: string): admin.auth.DecodedIdToken => {
 
     const issuedAt = Math.floor(Date.now() / 1000);
 
+    const sanitizedName = sanitizeName(parsed.name);
+
     return {
       uid: parsed.uid,
       email: parsed.email ?? null,
-      name: parsed.name ?? parsed.email ?? parsed.uid,
+      name: sanitizedName,
       aud: 'mock',
       auth_time: issuedAt,
       exp: issuedAt + 60 * 60,
