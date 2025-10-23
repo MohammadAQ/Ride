@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import AppError from '../utils/appError.js';
-import { firebaseAuth } from '../config/firebase.js';
+import { firebaseAuth, db } from '../config/firebase.js';
+import { sanitizeDisplayName, selectDisplayName } from '../utils/sanitize.js';
 
 export const authenticate = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
   const header = req.headers.authorization;
@@ -14,10 +15,24 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
   try {
     const decoded = await firebaseAuth.verifyIdToken(token);
 
+    let displayName = sanitizeDisplayName(decoded.name ?? decoded.uid);
+
+    if (db) {
+      try {
+        const profileSnapshot = await db.collection('users').doc(decoded.uid).get();
+        if (profileSnapshot.exists) {
+          const profileData = profileSnapshot.data() ?? {};
+          displayName = selectDisplayName(profileData, displayName);
+        }
+      } catch (error) {
+        // Ignore profile lookup issues and fall back to the decoded token name.
+      }
+    }
+
     req.user = {
       uid: decoded.uid,
       email: decoded.email ?? null,
-      name: decoded.name ?? decoded.email ?? decoded.uid,
+      name: displayName,
     };
 
     next();
