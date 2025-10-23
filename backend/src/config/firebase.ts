@@ -17,6 +17,31 @@ const sanitizeName = (value: unknown): string | undefined => {
   return trimmed;
 };
 
+function buildMockDecodedToken(params: {
+  uid: string;
+  email: string | null;
+  name?: string;
+  issuedAt: number;
+}): admin.auth.DecodedIdToken {
+  const { uid, email, name, issuedAt } = params;
+
+  return {
+    uid,
+    email,
+    name: name ?? undefined,
+    aud: 'mock',
+    auth_time: issuedAt,
+    exp: issuedAt + 60 * 60,
+    iat: issuedAt,
+    iss: 'https://mock.firebase.local',
+    sub: uid,
+    firebase: {
+      identities: {},
+      sign_in_provider: 'custom',
+    },
+  } as admin.auth.DecodedIdToken;
+}
+
 const createMockDecodedToken = (token: string): admin.auth.DecodedIdToken => {
   if (!token) {
     throw new Error('Token cannot be empty');
@@ -33,17 +58,12 @@ const createMockDecodedToken = (token: string): admin.auth.DecodedIdToken => {
 
     const issuedAt = Math.floor(Date.now() / 1000);
 
-    return {
+    return buildMockDecodedToken({
       uid,
       email: email ?? null,
       name: sanitizedName,
-      aud: 'mock',
-      auth_time: issuedAt,
-      exp: issuedAt + 60 * 60,
-      iat: issuedAt,
-      iss: 'https://mock.firebase.local',
-      sub: uid,
-    } as admin.auth.DecodedIdToken;
+      issuedAt,
+    });
   }
 
   try {
@@ -58,17 +78,12 @@ const createMockDecodedToken = (token: string): admin.auth.DecodedIdToken => {
 
     const sanitizedName = sanitizeName(parsed.name);
 
-    return {
+    return buildMockDecodedToken({
       uid: parsed.uid,
       email: parsed.email ?? null,
       name: sanitizedName,
-      aud: 'mock',
-      auth_time: issuedAt,
-      exp: issuedAt + 60 * 60,
-      iat: issuedAt,
-      iss: 'https://mock.firebase.local',
-      sub: parsed.uid,
-    } as admin.auth.DecodedIdToken;
+      issuedAt,
+    });
   } catch (error) {
     throw new Error('Unable to decode mock token. Provide a base64url encoded JSON token or use the "mock:" format.');
   }
