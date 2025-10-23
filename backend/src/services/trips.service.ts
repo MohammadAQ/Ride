@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { Timestamp } from 'firebase-admin/firestore';
 import { db, isUsingMockFirebase } from '../config/firebase.js';
+import { sanitizeDisplayName, selectDisplayName } from '../utils/sanitize.js';
 import AppError from '../utils/appError.js';
 import type { CreateTripInput, UpdateTripInput } from '../schemas/trips.schema.js';
 
@@ -37,6 +38,27 @@ const collection = () => {
   return db.collection('trips');
 };
 
+const resolveDriverName = (data: FirebaseFirestore.DocumentData): string => {
+  const driverField = data.driver;
+  let driverProfile: unknown;
+
+  if (driverField && typeof driverField === 'object' && !Array.isArray(driverField)) {
+    const record = driverField as Record<string, unknown>;
+    driverProfile = record.profile;
+  }
+
+  return selectDisplayName(
+    data.driverDisplayName,
+    data.driverFullName,
+    data.driverName,
+    driverField,
+    driverProfile,
+    data.fullName,
+    data.displayName,
+    data.name,
+  );
+};
+
 const serializeTrip = (doc: FirebaseFirestore.DocumentSnapshot): Trip => {
   const data = doc.data();
 
@@ -50,7 +72,7 @@ const serializeTrip = (doc: FirebaseFirestore.DocumentSnapshot): Trip => {
   return {
     id: doc.id,
     driverId: data.driverId,
-    driverName: data.driverName ?? '',
+    driverName: resolveDriverName(data),
     fromCity: data.fromCity,
     toCity: data.toCity,
     date: data.date,
@@ -138,7 +160,7 @@ const createTripInMemory = (
   const trip: Trip = {
     id: randomUUID(),
     driverId: driver.id,
-    driverName: driver.name ?? '',
+    driverName: sanitizeDisplayName(driver.name),
     ...payload,
     createdAt: now,
     updatedAt: now,
@@ -157,7 +179,7 @@ const createTripFirestore = async (
   const docRef = collection().doc();
   const data = {
     driverId: driver.id,
-    driverName: driver.name ?? '',
+    driverName: sanitizeDisplayName(driver.name),
     ...payload,
     createdAt: now,
     updatedAt: now,

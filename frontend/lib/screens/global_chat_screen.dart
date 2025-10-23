@@ -81,11 +81,6 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
       final Map<String, dynamic> updates = <String, dynamic>{
         'displayName': sanitizedName,
       };
-      final String? sanitizedEmail = UserProfile.sanitizeOptionalText(user.email);
-      if (sanitizedEmail != null) {
-        updates['email'] = sanitizedEmail;
-      }
-
       if (!snapshot.exists) {
         await docRef.set(updates, SetOptions(merge: true));
       } else {

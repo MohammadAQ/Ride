@@ -279,13 +279,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return UserProfile(
       id: profile.id,
       displayName: profile.displayName,
-      email: profile.email,
+      email: _isCurrentUser ? profile.email : null,
       phone: profile.phone,
       photoUrl: profile.photoUrl,
       tripCount: tripCount,
       reviewsCount: reviewsCount,
       rating: rating,
     );
+  }
+
+  void _storeProfileInCache(UserProfile profile) {
+    if (_isCurrentUser) {
+      UserProfileCache.storeProfile(profile.copyWith(email: null));
+    } else {
+      UserProfileCache.storeProfile(profile);
+    }
   }
 
   @override
@@ -325,6 +333,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       if (snapshot.exists) {
         profile = UserProfile.fromFirestoreSnapshot(snapshot);
+        if (_isCurrentUser) {
+          final User? authUser = FirebaseAuth.instance.currentUser;
+          profile = profile.copyWith(
+            email: UserProfile.sanitizeOptionalText(authUser?.email),
+          );
+        }
       } else {
         final User? authUser = FirebaseAuth.instance.currentUser;
         if (_isCurrentUser && authUser != null) {
@@ -358,7 +372,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _profile = enrichedProfile;
         _isLoading = false;
       });
-      UserProfileCache.storeProfile(enrichedProfile);
+      _storeProfileInCache(enrichedProfile);
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -426,7 +440,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _profile = _profile!.copyWith(photoUrl: downloadUrl);
         _isUpdatingPhoto = false;
       });
-      UserProfileCache.storeProfile(_profile!);
+      if (_profile != null) {
+        _storeProfileInCache(_profile!);
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -635,7 +651,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               setState(() {
                                 _profile = updatedProfile;
                               });
-                              UserProfileCache.storeProfile(updatedProfile);
+                              _storeProfileInCache(updatedProfile);
                             }
 
                             if (pendingImage != null) {
@@ -932,7 +948,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Text('لا توجد معلومات لعرضها.'),
       );
     } else {
-      final String email = _profile!.email ?? 'غير متوفر';
+      final String email = _isCurrentUser
+          ? (_profile!.email ?? 'غير متوفر')
+          : 'غير متوفر';
       final String phone = _profile!.phone ?? 'غير متوفر';
       final int? tripCountValue = _profile!.tripCount;
       final int? reviewsCountValue = _profile!.reviewsCount;

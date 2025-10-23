@@ -35,32 +35,36 @@ class UserProfile {
     return '?';
   }
 
+  static const Object _unset = Object();
+
   UserProfile copyWith({
     String? displayName,
-    String? email,
-    String? phone,
-    String? photoUrl,
-    int? tripCount,
-    int? reviewsCount,
-    double? rating,
+    Object? email = _unset,
+    Object? phone = _unset,
+    Object? photoUrl = _unset,
+    Object? tripCount = _unset,
+    Object? reviewsCount = _unset,
+    Object? rating = _unset,
   }) {
     return UserProfile(
       id: id,
       displayName: displayName ?? this.displayName,
-      email: email ?? this.email,
-      phone: phone ?? this.phone,
-      photoUrl: photoUrl ?? this.photoUrl,
-      tripCount: tripCount ?? this.tripCount,
-      reviewsCount: reviewsCount ?? this.reviewsCount,
-      rating: rating ?? this.rating,
+      email: email == _unset ? this.email : email as String?,
+      phone: phone == _unset ? this.phone : phone as String?,
+      photoUrl: photoUrl == _unset ? this.photoUrl : photoUrl as String?,
+      tripCount: tripCount == _unset ? this.tripCount : tripCount as int?,
+      reviewsCount: reviewsCount == _unset
+          ? this.reviewsCount
+          : reviewsCount as int?,
+      rating: rating == _unset ? this.rating : rating as double?,
     );
   }
 
   static UserProfile fromFirestore(String id, Map<String, dynamic> data) {
     return UserProfile(
       id: id,
-      displayName: sanitizeDisplayName(data['displayName']),
-      email: sanitizeOptionalText(data['email']),
+      displayName: _resolveDisplayName(data),
+      email: null,
       phone: sanitizeOptionalText(data['phone']),
       photoUrl: _sanitizeUrl(data['photoUrl']),
       tripCount: _toInt(data['tripCount'] ?? data['tripsCount']),
@@ -75,8 +79,18 @@ class UserProfile {
     return fromFirestore(snapshot.id, snapshot.data() ?? <String, dynamic>{});
   }
 
+  static final RegExp _emailPattern =
+      RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', caseSensitive: false);
+
   static String sanitizeDisplayName(dynamic value) {
-    return sanitizeOptionalText(value) ?? 'مستخدم';
+    final String? sanitized = sanitizeOptionalText(value);
+    if (sanitized == null) {
+      return 'مستخدم';
+    }
+    if (_emailPattern.hasMatch(sanitized)) {
+      return 'مستخدم';
+    }
+    return sanitized;
   }
 
   static String? sanitizeOptionalText(dynamic value) {
@@ -114,5 +128,36 @@ class UserProfile {
     if (value is double) return value;
     if (value is int) return value.toDouble();
     return double.tryParse(value.toString());
+  }
+
+  static String _resolveDisplayName(Map<String, dynamic> data) {
+    final List<dynamic> candidates = <dynamic>[
+      data['displayName'],
+      data['fullName'],
+      data['name'],
+      data['username'],
+      _combineNameParts(data['firstName'], data['lastName']),
+    ];
+
+    for (final dynamic candidate in candidates) {
+      final String sanitized = sanitizeDisplayName(candidate);
+      if (sanitized != 'مستخدم') {
+        return sanitized;
+      }
+    }
+
+    return 'مستخدم';
+  }
+
+  static String? _combineNameParts(dynamic first, dynamic last) {
+    final String? firstName = sanitizeOptionalText(first);
+    final String? lastName = sanitizeOptionalText(last);
+    if (firstName == null && lastName == null) {
+      return null;
+    }
+    if (firstName != null && lastName != null) {
+      return '$firstName $lastName'.trim();
+    }
+    return firstName ?? lastName;
   }
 }
