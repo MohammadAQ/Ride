@@ -494,13 +494,17 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'البحث عن الرحلات',
-                style: textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                  'البحث عن الرحلات',
+                  textAlign: TextAlign.right,
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -512,12 +516,16 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                       decoration: const InputDecoration(
                         labelText: 'من',
                         border: OutlineInputBorder(),
+                        floatingLabelAlignment: FloatingLabelAlignment.start,
                       ),
                       items: westBankCities
                           .map(
                             (city) => DropdownMenuItem<String>(
                               value: city,
-                              child: Text(city),
+                              child: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Text(city, textAlign: TextAlign.right),
+                              ),
                             ),
                           )
                           .toList(),
@@ -527,7 +535,10 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                         });
                       },
                       isExpanded: true,
-                      hint: const Text('اختر مدينة الانطلاق'),
+                      hint: const Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text('اختر مدينة الانطلاق'),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -537,12 +548,16 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                       decoration: const InputDecoration(
                         labelText: 'إلى',
                         border: OutlineInputBorder(),
+                        floatingLabelAlignment: FloatingLabelAlignment.start,
                       ),
                       items: westBankCities
                           .map(
                             (city) => DropdownMenuItem<String>(
                               value: city,
-                              child: Text(city),
+                              child: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Text(city, textAlign: TextAlign.right),
+                              ),
                             ),
                           )
                           .toList(),
@@ -552,7 +567,10 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                         });
                       },
                       isExpanded: true,
-                      hint: const Text('اختر مدينة الوصول'),
+                      hint: const Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text('اختر مدينة الوصول'),
+                      ),
                     ),
                   ),
                 ],
@@ -611,15 +629,25 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     );
 
     if (!widget.showAppBar) {
-      return body;
+      return Directionality(
+        textDirection: TextDirection.rtl,
+        child: body,
+      );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Search Trips'),
-        centerTitle: false,
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(
+          leading: Navigator.of(context).canPop() ? const BackButton() : null,
+          title: const Text(
+            'البحث عن الرحلات',
+            textAlign: TextAlign.right,
+          ),
+          centerTitle: false,
+        ),
+        body: body,
       ),
-      body: body,
     );
   }
 
