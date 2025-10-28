@@ -941,6 +941,131 @@ class TripCard extends StatelessWidget {
           height: 1.4,
         );
 
+    final List<Widget> columnChildren = <Widget>[];
+
+    final bool hasDriverInfo =
+        driverId.trim().isNotEmpty || driverName.trim().isNotEmpty;
+    if (hasDriverInfo) {
+      columnChildren.addAll([
+        Directionality(
+          textDirection: TextDirection.rtl,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'السائق',
+                style: driverLabelStyle,
+              ),
+              const SizedBox(height: 6),
+              UserProfilePreview(
+                userId: driverId,
+                fallbackName: driverName,
+                avatarRadius: 22,
+                textStyle: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 2,
+                      color: colorScheme.onSurface,
+                    ) ??
+                    TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                      color: colorScheme.onSurface,
+                    ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+      ]);
+    }
+
+    columnChildren.addAll([
+      Directionality(
+        textDirection: TextDirection.rtl,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.directions_car,
+              color: colorScheme.primary,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'من $fromCity  →  إلى $toCity',
+                style: routeTextStyle,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 16),
+      Divider(
+        height: 1,
+        color: dividerColor,
+      ),
+      const SizedBox(height: 16),
+      Directionality(
+        textDirection: TextDirection.rtl,
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.attach_money,
+                color: colorScheme.primary,
+                size: 18,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                price,
+                style: textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.primary,
+                    ) ??
+                    TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.primary,
+                    ),
+              ),
+              const SizedBox(width: 18),
+              Icon(
+                Icons.event,
+                color: colorScheme.onSurface.withOpacity(0.7),
+                size: 18,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                date,
+                style: textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurface.withOpacity(0.8),
+                    ) ??
+                    TextStyle(
+                      color: colorScheme.onSurface.withOpacity(0.8),
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ]);
+
+    if (notes != null && notes!.trim().isNotEmpty) {
+      columnChildren.addAll([
+        const SizedBox(height: 16),
+        Text(
+          notes!,
+          style: notesStyle,
+          textAlign: TextAlign.right,
+        ),
+      ]);
+    }
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Card(
@@ -958,121 +1083,8 @@ class TripCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
-              children: [
-              if (driverId.trim().isNotEmpty || driverName.trim().isNotEmpty) ...[
-                Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'السائق',
-                        style: driverLabelStyle,
-                      ),
-                      const SizedBox(height: 6),
-                      UserProfilePreview(
-                        userId: driverId,
-                        fallbackName: driverName,
-                        avatarRadius: 22,
-                        textStyle: textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              fontSize:
-                                  (textTheme.titleMedium?.fontSize ?? 16) + 2,
-                              color: colorScheme.onSurface,
-                            ) ??
-                            TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 18,
-                              color: colorScheme.onSurface,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
-              ],
-              Directionality(
-                textDirection: TextDirection.rtl,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.directions_car,
-                      color: colorScheme.primary,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'من $fromCity  →  إلى $toCity',
-                        style: routeTextStyle,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.right,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              Divider(
-                height: 1,
-                color: dividerColor,
-              ),
-              const SizedBox(height: 16),
-              Directionality(
-                textDirection: TextDirection.rtl,
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.attach_money,
-                        color: colorScheme.primary,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        price,
-                        style: textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: colorScheme.primary,
-                            ) ??
-                            TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: colorScheme.primary,
-                            ),
-                      ),
-                      const SizedBox(width: 18),
-                      Icon(
-                        Icons.event,
-                        color: colorScheme.onSurface.withOpacity(0.7),
-                        size: 18,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        date,
-                        style: textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurface.withOpacity(0.8),
-                            ) ??
-                            TextStyle(
-                              color: colorScheme.onSurface.withOpacity(0.8),
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (notes != null && notes!.trim().isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  notes!,
-                  style: notesStyle,
-                  textAlign: TextAlign.right,
-                ),
-              ],
-            ],
+              children: columnChildren,
+            ),
           ),
         ),
       ),
