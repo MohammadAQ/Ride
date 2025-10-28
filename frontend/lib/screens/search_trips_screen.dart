@@ -482,6 +482,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
   Widget _buildFilters(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final TextDirection textDirection = Directionality.of(context);
+    final bool isRtl = textDirection == TextDirection.rtl;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -497,10 +499,11 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Align(
-                alignment: AlignmentDirectional.centerStart,
+                alignment:
+                    isRtl ? Alignment.centerRight : Alignment.centerLeft,
                 child: Text(
                   'البحث عن الرحلات',
-                  textAlign: TextAlign.right,
+                  textAlign: isRtl ? TextAlign.right : TextAlign.left,
                   style: textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                     color: colorScheme.onSurface,
@@ -509,7 +512,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
               ),
               const SizedBox(height: 16),
               Row(
-                textDirection: TextDirection.rtl,
+                textDirection: textDirection,
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
@@ -525,7 +528,11 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                             (city) => DropdownMenuItem<String>(
                               value: city,
                               alignment: AlignmentDirectional.centerStart,
-                              child: Text(city, textAlign: TextAlign.right),
+                              child: Text(
+                                city,
+                                textAlign:
+                                    isRtl ? TextAlign.right : TextAlign.left,
+                              ),
                             ),
                           )
                           .toList(),
@@ -535,10 +542,13 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                         });
                       },
                       isExpanded: true,
-                      hint: const Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: Text('اختر مدينة الانطلاق',
-                            textAlign: TextAlign.right),
+                      hint: Align(
+                        alignment:
+                            isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Text(
+                          'اختر مدينة الانطلاق',
+                          textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                        ),
                       ),
                     ),
                   ),
@@ -557,7 +567,11 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                             (city) => DropdownMenuItem<String>(
                               value: city,
                               alignment: AlignmentDirectional.centerStart,
-                              child: Text(city, textAlign: TextAlign.right),
+                              child: Text(
+                                city,
+                                textAlign:
+                                    isRtl ? TextAlign.right : TextAlign.left,
+                              ),
                             ),
                           )
                           .toList(),
@@ -567,10 +581,13 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                         });
                       },
                       isExpanded: true,
-                      hint: const Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: Text('اختر مدينة الوصول',
-                            textAlign: TextAlign.right),
+                      hint: Align(
+                        alignment:
+                            isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Text(
+                          'اختر مدينة الوصول',
+                          textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                        ),
                       ),
                     ),
                   ),
@@ -612,6 +629,11 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       const Color(0xFFD1C4E9),
     ];
 
+    final TextDirection effectiveDirection =
+        Directionality.of(context) == TextDirection.rtl
+            ? TextDirection.rtl
+            : TextDirection.ltr;
+
     final body = Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -649,7 +671,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
         : body;
 
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: effectiveDirection,
       child: content,
     );
   }
@@ -756,7 +778,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 24, 16, 16),
       children: children,
     );
   }
@@ -909,6 +931,8 @@ class TripCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final TextDirection textDirection = Directionality.of(context);
+    final bool isRtl = textDirection == TextDirection.rtl;
 
     final Color dividerColor = colorScheme.onSurface.withOpacity(0.08);
     final TextStyle driverLabelStyle = textTheme.labelLarge?.copyWith(
@@ -947,21 +971,24 @@ class TripCard extends StatelessWidget {
         driverId.trim().isNotEmpty || driverName.trim().isNotEmpty;
     if (hasDriverInfo) {
       columnChildren.addAll([
-        Directionality(
-          textDirection: TextDirection.rtl,
+        Align(
+          alignment: isRtl ? Alignment.topRight : Alignment.topLeft,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment:
+                isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 'السائق',
                 style: driverLabelStyle,
+                textAlign: isRtl ? TextAlign.right : TextAlign.left,
               ),
               const SizedBox(height: 6),
               UserProfilePreview(
                 userId: driverId,
                 fallbackName: driverName,
                 avatarRadius: 22,
+                textDirection: textDirection,
                 textStyle: textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                       fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 2,
@@ -981,27 +1008,25 @@ class TripCard extends StatelessWidget {
     }
 
     columnChildren.addAll([
-      Directionality(
-        textDirection: TextDirection.rtl,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.directions_car,
-              color: colorScheme.primary,
-              size: 20,
+      Row(
+        textDirection: textDirection,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.directions_car,
+            color: colorScheme.primary,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'من $fromCity  ${isRtl ? '←' : '→'}  إلى $toCity',
+              style: routeTextStyle,
+              overflow: TextOverflow.ellipsis,
+              textAlign: isRtl ? TextAlign.right : TextAlign.left,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'من $fromCity  →  إلى $toCity',
-                style: routeTextStyle,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.right,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
       const SizedBox(height: 16),
       Divider(
@@ -1009,48 +1034,43 @@ class TripCard extends StatelessWidget {
         color: dividerColor,
       ),
       const SizedBox(height: 16),
-      Directionality(
-        textDirection: TextDirection.rtl,
-        child: Align(
-          alignment: Alignment.centerRight,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.attach_money,
-                color: colorScheme.primary,
-                size: 18,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                price,
-                style: textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: colorScheme.primary,
-                    ) ??
-                    TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: colorScheme.primary,
-                    ),
-              ),
-              const SizedBox(width: 18),
-              Icon(
-                Icons.event,
-                color: colorScheme.onSurface.withOpacity(0.7),
-                size: 18,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                date,
-                style: textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.8),
-                    ) ??
-                    TextStyle(
-                      color: colorScheme.onSurface.withOpacity(0.8),
-                    ),
-              ),
-            ],
-          ),
+      Align(
+        alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          textDirection: textDirection,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              price,
+              style: textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: colorScheme.primary,
+                  ) ??
+                  TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: colorScheme.primary,
+                  ),
+              textAlign: isRtl ? TextAlign.right : TextAlign.left,
+            ),
+            const SizedBox(width: 18),
+            Icon(
+              Icons.event,
+              color: colorScheme.onSurface.withOpacity(0.7),
+              size: 18,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              date,
+              style: textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface.withOpacity(0.8),
+                  ) ??
+                  TextStyle(
+                    color: colorScheme.onSurface.withOpacity(0.8),
+                  ),
+              textAlign: isRtl ? TextAlign.right : TextAlign.left,
+            ),
+          ],
         ),
       ),
     ]);
@@ -1061,13 +1081,13 @@ class TripCard extends StatelessWidget {
         Text(
           notes!,
           style: notesStyle,
-          textAlign: TextAlign.right,
+          textAlign: isRtl ? TextAlign.right : TextAlign.left,
         ),
       ]);
     }
 
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: textDirection,
       child: Card(
         elevation: 4,
         shadowColor: colorScheme.shadow.withOpacity(0.18),
@@ -1079,9 +1099,11 @@ class TripCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+            padding:
+                const EdgeInsetsDirectional.symmetric(horizontal: 22, vertical: 18),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment:
+                  isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: columnChildren,
             ),
