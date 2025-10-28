@@ -879,19 +879,51 @@ class TripCard extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
+    final Color dividerColor = colorScheme.onSurface.withOpacity(0.08);
+    final TextStyle driverLabelStyle = textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: colorScheme.primary,
+          letterSpacing: 0.3,
+        ) ??
+        TextStyle(
+          fontWeight: FontWeight.w600,
+          color: colorScheme.primary,
+        );
+
+    final TextStyle routeTextStyle = textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+          fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
+          color: colorScheme.onSurface,
+        ) ??
+        TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 17,
+          color: colorScheme.onSurface,
+        );
+
+    final TextStyle notesStyle = textTheme.bodySmall?.copyWith(
+          color: colorScheme.onSurface.withOpacity(0.7),
+          height: 1.4,
+        ) ??
+        TextStyle(
+          color: colorScheme.onSurface.withOpacity(0.7),
+          height: 1.4,
+        );
+
     return Card(
-      elevation: 3,
+      elevation: 4,
+      shadowColor: colorScheme.shadow.withOpacity(0.18),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
       ),
-      color: colorScheme.surface.withOpacity(0.95),
+      color: colorScheme.surface.withOpacity(0.96),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
               if (driverId.trim().isNotEmpty || driverName.trim().isNotEmpty) ...[
@@ -903,25 +935,29 @@ class TripCard extends StatelessWidget {
                     children: [
                       Text(
                         'السائق',
-                        style: textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.primary,
-                        ),
+                        style: driverLabelStyle,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       UserProfilePreview(
                         userId: driverId,
                         fallbackName: driverName,
                         avatarRadius: 22,
                         textStyle: textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.onSurface,
-                        ),
+                              fontWeight: FontWeight.w700,
+                              fontSize:
+                                  (textTheme.titleMedium?.fontSize ?? 16) + 2,
+                              color: colorScheme.onSurface,
+                            ) ??
+                            TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 18,
+                              color: colorScheme.onSurface,
+                            ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
               ],
               Directionality(
                 textDirection: TextDirection.rtl,
@@ -933,15 +969,11 @@ class TripCard extends StatelessWidget {
                       color: colorScheme.primary,
                       size: 20,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'من: $fromCity  →  إلى: $toCity',
-                        style: textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                          color: colorScheme.onSurface,
-                        ),
+                        'من $fromCity  →  إلى $toCity',
+                        style: routeTextStyle,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.right,
                       ),
@@ -949,37 +981,62 @@ class TripCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              Divider(
+                height: 1,
+                color: dividerColor,
+              ),
+              const SizedBox(height: 16),
               Directionality(
                 textDirection: TextDirection.rtl,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.attach_money,
+                        color: colorScheme.primary,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        price,
+                        style: textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: colorScheme.primary,
+                            ) ??
+                            TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: colorScheme.primary,
+                            ),
+                      ),
+                      const SizedBox(width: 18),
+                      Icon(
+                        Icons.event,
+                        color: colorScheme.onSurface.withOpacity(0.7),
+                        size: 18,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
                         date,
                         style: textTheme.bodyMedium?.copyWith(
-                          color: colorScheme.onSurface.withOpacity(0.8),
-                        ),
-                        textAlign: TextAlign.right,
+                              color: colorScheme.onSurface.withOpacity(0.8),
+                            ) ??
+                            TextStyle(
+                              color: colorScheme.onSurface.withOpacity(0.8),
+                            ),
                       ),
-                    ),
-                    Text(
-                      price,
-                      style: textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.primary,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               if (notes != null && notes!.trim().isNotEmpty) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 Text(
                   notes!,
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurface.withOpacity(0.7),
-                  ),
+                  style: notesStyle,
+                  textAlign: TextAlign.right,
                 ),
               ],
             ],
