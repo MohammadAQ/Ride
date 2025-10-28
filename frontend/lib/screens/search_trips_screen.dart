@@ -931,8 +931,7 @@ class TripCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final TextDirection textDirection = Directionality.of(context);
-    final bool isRtl = textDirection == TextDirection.rtl;
+    const TextDirection textDirection = TextDirection.rtl;
 
     final Color dividerColor = colorScheme.onSurface.withOpacity(0.08);
     final TextStyle driverLabelStyle = textTheme.labelLarge?.copyWith(
@@ -972,16 +971,15 @@ class TripCard extends StatelessWidget {
     if (hasDriverInfo) {
       columnChildren.addAll([
         Align(
-          alignment: isRtl ? Alignment.topRight : Alignment.topLeft,
+          alignment: Alignment.topRight,
           child: Column(
-            crossAxisAlignment:
-                isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 'السائق',
                 style: driverLabelStyle,
-                textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                textAlign: TextAlign.right,
               ),
               const SizedBox(height: 6),
               UserProfilePreview(
@@ -1011,6 +1009,7 @@ class TripCard extends StatelessWidget {
       Row(
         textDirection: textDirection,
         crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.start,
         children: [
           Icon(
             Icons.directions_car,
@@ -1020,10 +1019,10 @@ class TripCard extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'من $fromCity  ${isRtl ? '←' : '→'}  إلى $toCity',
+              'من $fromCity → إلى $toCity',
               style: routeTextStyle,
               overflow: TextOverflow.ellipsis,
-              textAlign: isRtl ? TextAlign.right : TextAlign.left,
+              textAlign: TextAlign.right,
             ),
           ),
         ],
@@ -1035,7 +1034,7 @@ class TripCard extends StatelessWidget {
       ),
       const SizedBox(height: 16),
       Align(
-        alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
+        alignment: Alignment.centerRight,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           textDirection: textDirection,
@@ -1051,24 +1050,31 @@ class TripCard extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                     color: colorScheme.primary,
                   ),
-              textAlign: isRtl ? TextAlign.right : TextAlign.left,
+              textAlign: TextAlign.right,
             ),
             const SizedBox(width: 18),
-            Icon(
-              Icons.event,
-              color: colorScheme.onSurface.withOpacity(0.7),
-              size: 18,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              date,
-              style: textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurface.withOpacity(0.8),
-                  ) ??
-                  TextStyle(
-                    color: colorScheme.onSurface.withOpacity(0.8),
-                  ),
-              textAlign: isRtl ? TextAlign.right : TextAlign.left,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              textDirection: textDirection,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.event,
+                  color: colorScheme.onSurface.withOpacity(0.7),
+                  size: 18,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  date,
+                  style: textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurface.withOpacity(0.8),
+                      ) ??
+                      TextStyle(
+                        color: colorScheme.onSurface.withOpacity(0.8),
+                      ),
+                  textAlign: TextAlign.right,
+                ),
+              ],
             ),
           ],
         ),
@@ -1081,7 +1087,7 @@ class TripCard extends StatelessWidget {
         Text(
           notes!,
           style: notesStyle,
-          textAlign: isRtl ? TextAlign.right : TextAlign.left,
+          textAlign: TextAlign.right,
         ),
       ]);
     }
@@ -1102,8 +1108,7 @@ class TripCard extends StatelessWidget {
             padding:
                 const EdgeInsetsDirectional.symmetric(horizontal: 22, vertical: 18),
             child: Column(
-              crossAxisAlignment:
-                  isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.end,
               mainAxisSize: MainAxisSize.min,
               children: columnChildren,
             ),
