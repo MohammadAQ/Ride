@@ -509,10 +509,12 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
               ),
               const SizedBox(height: 16),
               Row(
+                textDirection: TextDirection.rtl,
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       value: _selectedFromCity,
+                      alignment: AlignmentDirectional.centerStart,
                       decoration: const InputDecoration(
                         labelText: 'من',
                         border: OutlineInputBorder(),
@@ -522,10 +524,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                           .map(
                             (city) => DropdownMenuItem<String>(
                               value: city,
-                              child: Align(
-                                alignment: AlignmentDirectional.centerStart,
-                                child: Text(city, textAlign: TextAlign.right),
-                              ),
+                              alignment: AlignmentDirectional.centerStart,
+                              child: Text(city, textAlign: TextAlign.right),
                             ),
                           )
                           .toList(),
@@ -537,7 +537,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                       isExpanded: true,
                       hint: const Align(
                         alignment: AlignmentDirectional.centerStart,
-                        child: Text('اختر مدينة الانطلاق'),
+                        child: Text('اختر مدينة الانطلاق',
+                            textAlign: TextAlign.right),
                       ),
                     ),
                   ),
@@ -545,6 +546,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       value: _selectedToCity,
+                      alignment: AlignmentDirectional.centerStart,
                       decoration: const InputDecoration(
                         labelText: 'إلى',
                         border: OutlineInputBorder(),
@@ -554,10 +556,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                           .map(
                             (city) => DropdownMenuItem<String>(
                               value: city,
-                              child: Align(
-                                alignment: AlignmentDirectional.centerStart,
-                                child: Text(city, textAlign: TextAlign.right),
-                              ),
+                              alignment: AlignmentDirectional.centerStart,
+                              child: Text(city, textAlign: TextAlign.right),
                             ),
                           )
                           .toList(),
@@ -569,7 +569,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                       isExpanded: true,
                       hint: const Align(
                         alignment: AlignmentDirectional.centerStart,
-                        child: Text('اختر مدينة الوصول'),
+                        child: Text('اختر مدينة الوصول',
+                            textAlign: TextAlign.right),
                       ),
                     ),
                   ),
@@ -628,26 +629,28 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       ),
     );
 
-    if (!widget.showAppBar) {
-      return Directionality(
-        textDirection: TextDirection.rtl,
-        child: body,
-      );
-    }
+    final Widget content = widget.showAppBar
+        ? Scaffold(
+            appBar: AppBar(
+              leading:
+                  Navigator.of(context).canPop() ? const BackButton() : null,
+              titleSpacing: 0,
+              title: const Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  'البحث عن الرحلات',
+                  textAlign: TextAlign.right,
+                ),
+              ),
+              centerTitle: false,
+            ),
+            body: body,
+          )
+        : body;
 
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(
-          leading: Navigator.of(context).canPop() ? const BackButton() : null,
-          title: const Text(
-            'البحث عن الرحلات',
-            textAlign: TextAlign.right,
-          ),
-          centerTitle: false,
-        ),
-        body: body,
-      ),
+      child: content,
     );
   }
 
@@ -938,22 +941,24 @@ class TripCard extends StatelessWidget {
           height: 1.4,
         );
 
-    return Card(
-      elevation: 4,
-      shadowColor: colorScheme.shadow.withOpacity(0.18),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-      ),
-      color: colorScheme.surface.withOpacity(0.96),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Card(
+        elevation: 4,
+        shadowColor: colorScheme.shadow.withOpacity(0.18),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+        color: colorScheme.surface.withOpacity(0.96),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
               if (driverId.trim().isNotEmpty || driverName.trim().isNotEmpty) ...[
                 Directionality(
                   textDirection: TextDirection.rtl,
