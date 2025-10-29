@@ -621,6 +621,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
         final toCity = (data['toCity'] ?? '').toString().trim();
         final dateText = _formatDate(data['date']);
         final timeText = _formatTime(data['time']);
+        final driverId = _resolveTripDriverId(data) ?? '';
         final priceText = _formatPrice(data['price']);
         final driverName = _extractDriverName(data);
         final availableSeats = _parseSeatCount(data['availableSeats']);
@@ -641,6 +642,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
           driverName: driverName,
           availableSeats: availableSeats,
           price: priceText,
+          driverId: driverId,
           carModel: carModel,
           carColor: carColor,
           createdAt: createdAt,
