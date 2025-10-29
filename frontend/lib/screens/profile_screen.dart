@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:carpal_app/models/user_profile.dart';
 import 'package:carpal_app/screens/login_screen.dart';
+import 'package:carpal_app/services/notification_service.dart';
 import 'package:carpal_app/services/user_profile_cache.dart';
 
 class _ProfileStatistics {
@@ -48,6 +49,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   UserProfile? _profile;
   bool _isLoading = true;
   bool _isUpdatingPhoto = false;
+  bool _isSendingTestNotification = false;
   String? _errorMessage;
   late final String _targetUserId;
 
@@ -706,6 +708,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Future<void> _sendTestNotification() async {
+    if (!_isCurrentUser || _isSendingTestNotification) {
+      return;
+    }
+
+    setState(() {
+      _isSendingTestNotification = true;
+    });
+
+    try {
+      await NotificationService.instance.sendTestNotification();
+    } catch (_) {
+      // The service already surfaces the error via SnackBar and debug logs.
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isSendingTestNotification = false;
+      });
+    }
+  }
+
   Future<void> _signOut() async {
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
@@ -1213,6 +1236,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           onPressed: _handleEditProfile,
                           icon: const Icon(Icons.edit_rounded),
                           label: const Text('تعديل الملف الشخصي'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed:
+                              _isSendingTestNotification ? null : _sendTestNotification,
+                          icon: _isSendingTestNotification
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.notifications_active_rounded),
+                          label: Text(
+                            _isSendingTestNotification
+                                ? 'جاري الإرسال...'
+                                : 'إرسال إشعار تجريبي',
+                          ),
                         ),
                         OutlinedButton.icon(
                           onPressed: _signOut,
