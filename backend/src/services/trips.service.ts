@@ -18,6 +18,9 @@ export interface Trip {
   carColor: string;
   phoneNumber: string;
   notes?: string;
+  totalSeats: number;
+  availableSeats: number;
+  bookedUsers: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -68,6 +71,20 @@ const serializeTrip = (doc: FirebaseFirestore.DocumentSnapshot): Trip => {
 
   const createdAt: Timestamp | undefined = data.createdAt;
   const updatedAt: Timestamp | undefined = data.updatedAt;
+  const bookedUsers: string[] = Array.isArray(data.bookedUsers)
+    ? data.bookedUsers
+        .map((value: unknown) => (typeof value === 'string' ? value : String(value)))
+        .filter((value: string) => value.trim().length > 0)
+    : [];
+  const rawAvailable = typeof data.availableSeats === 'number'
+    ? data.availableSeats
+    : Number(data.availableSeats);
+  const availableSeats = Number.isFinite(rawAvailable) && rawAvailable >= 0 ? rawAvailable : 0;
+  const rawTotalSeats = typeof data.totalSeats === 'number' ? data.totalSeats : Number(data.totalSeats);
+  const computedTotal = bookedUsers.length + availableSeats;
+  const totalSeats = Number.isFinite(rawTotalSeats) && rawTotalSeats >= bookedUsers.length
+    ? rawTotalSeats
+    : computedTotal;
 
   return {
     id: doc.id,
@@ -82,6 +99,9 @@ const serializeTrip = (doc: FirebaseFirestore.DocumentSnapshot): Trip => {
     carColor: data.carColor,
     phoneNumber: data.phoneNumber,
     notes: data.notes,
+    totalSeats,
+    availableSeats,
+    bookedUsers,
     createdAt: createdAt ? createdAt.toDate().toISOString() : '',
     updatedAt: updatedAt ? updatedAt.toDate().toISOString() : '',
   };
@@ -161,7 +181,18 @@ const createTripInMemory = (
     id: randomUUID(),
     driverId: driver.id,
     driverName: sanitizeDisplayName(driver.name),
-    ...payload,
+    fromCity: payload.fromCity,
+    toCity: payload.toCity,
+    date: payload.date,
+    time: payload.time,
+    price: payload.price,
+    carModel: payload.carModel,
+    carColor: payload.carColor,
+    phoneNumber: payload.phoneNumber,
+    notes: payload.notes,
+    totalSeats: payload.totalSeats,
+    availableSeats: payload.totalSeats,
+    bookedUsers: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -180,10 +211,25 @@ const createTripFirestore = async (
   const data = {
     driverId: driver.id,
     driverName: sanitizeDisplayName(driver.name),
-    ...payload,
+    fromCity: payload.fromCity,
+    toCity: payload.toCity,
+    date: payload.date,
+    time: payload.time,
+    price: payload.price,
+    carModel: payload.carModel,
+    carColor: payload.carColor,
+    phoneNumber: payload.phoneNumber,
+    notes: payload.notes,
+    totalSeats: payload.totalSeats,
+    availableSeats: payload.totalSeats,
+    bookedUsers: [],
     createdAt: now,
     updatedAt: now,
   };
+
+  if (data.notes === undefined) {
+    delete (data as { notes?: string }).notes;
+  }
 
   await docRef.set(data);
 
@@ -203,9 +249,32 @@ const updateTripInMemory = (id: string, updates: UpdateTripInput, driverId: stri
     throw new AppError('You are not allowed to modify this trip', 403);
   }
 
+  const bookedCount = existing.bookedUsers.length;
+  const nextTotalSeats = updates.totalSeats ?? existing.totalSeats;
+
+  if (nextTotalSeats < bookedCount) {
+    throw new AppError('totalSeats cannot be less than the number of booked seats', 400);
+  }
+
+  let requestedAvailable = updates.availableSeats ?? existing.availableSeats;
+  const maxAvailable = nextTotalSeats - bookedCount;
+
+  if (requestedAvailable < 0) {
+    throw new AppError('availableSeats cannot be negative', 400);
+  }
+
+  if (requestedAvailable > maxAvailable) {
+    if (updates.availableSeats !== undefined) {
+      throw new AppError('availableSeats cannot exceed remaining seats', 400);
+    }
+    requestedAvailable = maxAvailable;
+  }
+
   const updated: Trip = {
     ...existing,
     ...updates,
+    totalSeats: nextTotalSeats,
+    availableSeats: requestedAvailable,
     updatedAt: new Date().toISOString(),
   };
 
@@ -232,8 +301,43 @@ const updateTripFirestore = async (id: string, updates: UpdateTripInput, driverI
     throw new AppError('You are not allowed to modify this trip', 403);
   }
 
+  const bookedUsers: string[] = Array.isArray(data.bookedUsers)
+    ? data.bookedUsers
+        .map((value: unknown) => (typeof value === 'string' ? value : String(value)))
+        .filter((value: string) => value.trim().length > 0)
+    : [];
+  const bookedCount = bookedUsers.length;
+
+  const storedTotal = typeof data.totalSeats === 'number' ? data.totalSeats : Number(data.totalSeats) || 0;
+  const storedAvailable = typeof data.availableSeats === 'number'
+    ? data.availableSeats
+    : Number(data.availableSeats) || 0;
+
+  const currentTotal = storedTotal > 0 ? storedTotal : bookedCount + storedAvailable;
+  const nextTotalSeats = updates.totalSeats ?? currentTotal;
+
+  if (nextTotalSeats < bookedCount) {
+    throw new AppError('totalSeats cannot be less than the number of booked seats', 400);
+  }
+
+  let requestedAvailable = updates.availableSeats ?? storedAvailable;
+  const maxAvailable = nextTotalSeats - bookedCount;
+
+  if (requestedAvailable < 0) {
+    throw new AppError('availableSeats cannot be negative', 400);
+  }
+
+  if (requestedAvailable > maxAvailable) {
+    if (updates.availableSeats !== undefined) {
+      throw new AppError('availableSeats cannot exceed remaining seats', 400);
+    }
+    requestedAvailable = maxAvailable;
+  }
+
   const payload = {
     ...updates,
+    totalSeats: nextTotalSeats,
+    availableSeats: requestedAvailable,
     updatedAt: Timestamp.now(),
   };
 

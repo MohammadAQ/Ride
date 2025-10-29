@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:carpal_app/l10n/app_localizations.dart';
 import 'package:carpal_app/screens/create_trip_screen.dart';
-import 'package:carpal_app/screens/global_chat_screen.dart';
+import 'package:carpal_app/screens/my_bookings_screen.dart';
 import 'package:carpal_app/screens/my_trips_screen.dart';
 import 'package:carpal_app/screens/profile_screen.dart';
 import 'package:carpal_app/screens/search_trips_screen.dart';
@@ -33,9 +33,9 @@ class _MainScreenState extends State<MainScreen> {
       page: const CreateTripScreen(showAppBar: false),
     ),
     const _Destination(
-      titleKey: 'nav_global_chat',
-      icon: Icons.chat_bubble_outline,
-      page: const GlobalChatScreen(showAppBar: false),
+      titleKey: 'nav_my_bookings',
+      icon: Icons.event_seat,
+      page: const MyBookingsScreen(showAppBar: false),
     ),
     const _Destination(
       titleKey: 'nav_profile',
