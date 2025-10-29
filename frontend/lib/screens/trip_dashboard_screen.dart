@@ -14,6 +14,7 @@ class TripDashboardArguments {
     required this.driverName,
     required this.availableSeats,
     required this.price,
+    this.driverId,
     this.carModel,
     this.carColor,
     this.createdAt,
@@ -27,6 +28,7 @@ class TripDashboardArguments {
   final String driverName;
   final int availableSeats;
   final String price;
+  final String? driverId;
   final String? carModel;
   final String? carColor;
   final DateTime? createdAt;
@@ -91,12 +93,26 @@ class TripDashboardScreen extends StatelessWidget {
               // ),
               Expanded(
                 child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: _passengerStream(arguments.tripId),
+                  stream: _passengerStream(
+                    tripId: arguments.tripId,
+                    driverId: arguments.driverId,
+                  ),
                   builder: (
                     BuildContext context,
                     AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot,
                   ) {
                     if (snapshot.hasError) {
+                      // Print the raw error (with the index creation URL) so it is
+                      // always visible in debug consoles/logcat while we still
+                      // show a localized fallback message to the driver.
+                      debugPrint(
+                        'Trip dashboard stream error for trip ${arguments.tripId} '
+                        '(driverId: ${arguments.driverId?.isNotEmpty == true ? arguments.driverId : 'unknown'}) -> ${snapshot.error}',
+                      );
+                      if (snapshot.stackTrace != null) {
+                        debugPrint(snapshot.stackTrace.toString());
+                      }
+
                       final Object? error = snapshot.error;
                       final String fallback = isRtl
                           ? 'حدث خطأ أثناء تحميل الركاب. حاول مرة أخرى لاحقًا.'
@@ -155,12 +171,26 @@ class TripDashboardScreen extends StatelessWidget {
     );
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _passengerStream(String tripId) async* {
+  Stream<QuerySnapshot<Map<String, dynamic>>> _passengerStream({
+    required String tripId,
+    String? driverId,
+  }) async* {
     final FirebaseFirestore firestore = FirebaseFirestore.instance;
     final DocumentReference<Map<String, dynamic>> tripRef =
         firestore.collection('trips').doc(tripId);
 
     try {
+      // Logging every parameter used in the Firestore query makes it much
+      // easier to confirm the field names/types match the created composite
+      // indexes (tripId + updatedAt and tripRef + updatedAt).
+      debugPrint(
+        'Trip dashboard passengers query => collection: bookings | '
+        'tripId filter: $tripId | '
+        'tripRef filter: ${tripRef.path} | '
+        'driverId: ${driverId?.isNotEmpty == true ? driverId : 'unknown'} | '
+        'orderBy: updatedAt DESC',
+      );
+
       final Query<Map<String, dynamic>> query = firestore
           .collection('bookings')
           .where(
@@ -172,14 +202,21 @@ class TripDashboardScreen extends StatelessWidget {
               Filter('tripRef', isEqualTo: tripRef),
             ),
           )
-          // Keep most recent status changes at the top of the dashboard.
+          // Keep most recent status changes at the top of the dashboard. The
+          // descending direction matches the required composite indexes
+          // (tripId ASC + updatedAt DESC) and (tripRef ASC + updatedAt DESC).
           .orderBy('updatedAt', descending: true);
 
       yield* query.snapshots();
     } on FirebaseException catch (error, stackTrace) {
-      debugPrint('Failed to load passengers for trip $tripId: ${error.message}');
+      debugPrint(
+        'Failed to load passengers for trip $tripId '
+        '(driverId: ${driverId?.isNotEmpty == true ? driverId : 'unknown'}): '
+        '${error.code} -> ${error.message}',
+      );
       // Surface a readable message to the StreamBuilder so the UI can present
-      // something friendlier than the default Firebase error text.
+      // something friendlier than the default Firebase error text. The raw
+      // Firestore message (with the index link) is still printed above.
       Error.throwWithStackTrace(
         FirebaseException(
           plugin: error.plugin,

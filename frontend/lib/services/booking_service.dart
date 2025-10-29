@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 class BookingException implements Exception {
   BookingException(this.code, this.message);
@@ -90,6 +91,16 @@ class BookingService {
         if (availableSeats <= 0) {
           throw BookingException(
               'sold-out', 'لا توجد مقاعد متاحة في هذه الرحلة.');
+        }
+
+        if (kDebugMode) {
+          // Keep a verbose log so we can verify the booking payload matches the
+          // dashboard query (tripId/tripRef/driverId) whenever a booking is
+          // created. This helps track down index issues quickly in debug logs.
+          debugPrint(
+            'Creating booking -> tripId: $tripId | userId: $userId | '
+            'driverId: $driverId | bookingDoc: ${bookingRef.path}',
+          );
         }
 
         final List<String> updatedBookedUsers =
