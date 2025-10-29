@@ -107,7 +107,7 @@ ThemeData _buildLightTheme() {
       iconTheme: const IconThemeData(color: Colors.white),
     ),
     iconTheme: const IconThemeData(color: secondaryColor),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: surfaceColor,
       elevation: 6,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -255,7 +255,7 @@ ThemeData _buildDarkTheme() {
       iconTheme: const IconThemeData(color: Colors.white),
     ),
     iconTheme: const IconThemeData(color: secondaryColor),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: surfaceColor,
       elevation: 4,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
