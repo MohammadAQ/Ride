@@ -102,6 +102,12 @@ class BookingService {
 
       if (existingBookingStatus == 'canceled') {
         transaction.update(bookingRef, <String, dynamic>{
+          // Ensure both the string ID and the DocumentReference are always present
+          // so that dashboard queries can match the booking regardless of type.
+          'tripId': tripId,
+          'tripRef': tripRef,
+          'driverId': driverId,
+          'userId': userId,
           'status': 'confirmed',
           'bookedAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
@@ -110,11 +116,18 @@ class BookingService {
       } else {
         transaction.set(bookingRef, <String, dynamic>{
           'userId': userId,
+          // Store the plain string tripId for backwards compatibility with
+          // existing queries and analytics.
           'tripId': tripId,
+          // Store a DocumentReference to the trip to support reference-based
+          // filters used by the dashboard when older bookings saved a reference.
+          'tripRef': tripRef,
           'driverId': driverId,
           'status': 'confirmed',
           'bookedAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
+          // Persist createdAt so we can order bookings consistently.
+          'createdAt': FieldValue.serverTimestamp(),
         });
       }
     });
