@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -38,6 +39,7 @@ class NotificationService {
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  late final FirebaseFunctions _functions;
   final FlutterLocalNotificationsPlugin _localNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
@@ -62,6 +64,8 @@ class NotificationService {
     }
     _initialized = true;
 
+    _functions = FirebaseFunctions.instanceFor(app: Firebase.app());
+
     final NotificationSettings settings = await _messaging.requestPermission(
       alert: true,
       badge: true,
@@ -71,6 +75,8 @@ class NotificationService {
       provisional: false,
       criticalAlert: false,
     );
+
+    await _requestAndroidNotificationPermission();
 
     if (kDebugMode) {
       debugPrint('Notification permission status: '
@@ -269,6 +275,20 @@ class NotificationService {
     );
   }
 
+  void _showGlobalSnackBar(String message) {
+    final NavigatorState? navigator = navigatorKey.currentState;
+    final BuildContext? context = navigator?.context;
+    if (context == null) {
+      if (kDebugMode) {
+        debugPrint('Snackbar requested but context was null: $message');
+      }
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   Future<void> saveToken(String uid) async {
     final String trimmedUid = uid.trim();
     if (trimmedUid.isEmpty) {
@@ -281,6 +301,10 @@ class NotificationService {
       final String? token = await _messaging.getToken();
       if (token != null && token.isNotEmpty) {
         await _persistToken(trimmedUid, token);
+        if (kDebugMode) {
+          final String preview = token.length > 12 ? '${token.substring(0, 12)}…' : token;
+          debugPrint('Saved FCM token for $trimmedUid ($preview)');
+        }
       }
     } catch (error, stackTrace) {
       if (kDebugMode) {
@@ -295,6 +319,11 @@ class NotificationService {
         return;
       }
       unawaited(_persistToken(activeUserId, refreshedToken));
+      if (kDebugMode) {
+        final String preview =
+            refreshedToken.length > 12 ? '${refreshedToken.substring(0, 12)}…' : refreshedToken;
+        debugPrint('Refreshed FCM token for $activeUserId ($preview)');
+      }
     });
   }
 
@@ -315,6 +344,59 @@ class NotificationService {
         debugPrint('Failed to persist FCM token for $uid: '
             '$error\n$stackTrace');
       }
+    }
+  }
+
+  Future<void> sendTestNotification() async {
+    try {
+      final String? token = await _messaging.getToken();
+      if (token == null || token.isEmpty) {
+        _showGlobalSnackBar('لم يتم العثور على رمز الإشعار لهذا الجهاز.');
+        return;
+      }
+
+      final HttpsCallable callable =
+          _functions.httpsCallable('sendTestNotification');
+      final HttpsCallableResult<dynamic> response = await callable.call(
+        <String, dynamic>{'token': token},
+      );
+
+      final Map<String, dynamic> data =
+          (response.data as Map<dynamic, dynamic>?)
+                  ?.map((dynamic key, dynamic value) =>
+                      MapEntry<String, dynamic>(key.toString(), value)) ??
+              <String, dynamic>{};
+      final int targetCount = (data['targetCount'] as num?)?.toInt() ?? 0;
+      final int successCount = (data['successCount'] as num?)?.toInt() ?? 0;
+      final int failureCount = (data['failureCount'] as num?)?.toInt() ?? 0;
+
+      _showGlobalSnackBar(
+        'تم إرسال الإشعار التجريبي ($successCount من $targetCount، أخطاء: $failureCount).',
+      );
+    } on FirebaseFunctionsException catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('sendTestNotification failed: $error\n$stackTrace');
+      }
+      _showGlobalSnackBar('تعذّر إرسال الإشعار التجريبي: ${error.message ?? error.code}.');
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('sendTestNotification unexpected error: $error\n$stackTrace');
+      }
+      _showGlobalSnackBar('تعذّر إرسال الإشعار التجريبي. حاول مرة أخرى لاحقًا.');
+    }
+  }
+
+  Future<void> _requestAndroidNotificationPermission() async {
+    final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
+        _localNotificationsPlugin.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    if (androidImplementation == null) {
+      return;
+    }
+
+    final bool? granted = await androidImplementation.requestPermission();
+    if (kDebugMode) {
+      debugPrint('Android notification permission granted: $granted');
     }
   }
 
@@ -361,6 +443,7 @@ class NotificationService {
   }
 }
 
+@pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
