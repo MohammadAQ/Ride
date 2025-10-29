@@ -397,7 +397,13 @@ class NotificationService {
       );
     }
 
-    final String idToken = await user.getIdToken();
+    final String? idToken = await user.getIdToken();
+    if (idToken == null) {
+      throw const NotificationServiceException(
+        code: 'missing-id-token',
+        message: 'فشل الحصول على رمز هوية المستخدم.',
+      );
+    }
     final FirebaseApp app = Firebase.app();
     final String projectId = app.options.projectId ?? '';
     if (projectId.isEmpty) {
