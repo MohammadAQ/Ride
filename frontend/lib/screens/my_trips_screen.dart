@@ -1162,28 +1162,28 @@ class MyTripCard extends StatelessWidget {
                     textAlign: isRtl ? TextAlign.right : TextAlign.left,
                   ),
                 ),
-                if (onViewDetails != null) ...[
-                  const SizedBox(height: 16),
-                  Align(
-                    alignment: AlignmentDirectional.centerEnd,
-                    child: FilledButton.tonal(
-                      onPressed: onViewDetails,
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
+                  if (onViewDetails != null) ...[
+                    const SizedBox(height: 16),
+                    Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: FilledButton.icon(
+                        onPressed: onViewDetails,
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          backgroundColor: colorScheme.primary.withOpacity(0.12),
+                          foregroundColor: colorScheme.primary,
+                          textStyle: textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                        backgroundColor: colorScheme.primary.withOpacity(0.12),
-                        foregroundColor: colorScheme.primary,
-                        textStyle: textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                        icon: const Icon(Icons.remove_red_eye_outlined, size: 18),
+                        label: Text(isRtl ? 'عرض التفاصيل' : 'View Details'),
                       ),
-                      icon: const Icon(Icons.remove_red_eye_outlined, size: 18),
-                      label: Text(isRtl ? 'عرض التفاصيل' : 'View Details'),
                     ),
-                  ),
-                ],
+                  ],
               ],
             ),
           ),
