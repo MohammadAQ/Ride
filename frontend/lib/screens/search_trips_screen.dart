@@ -218,6 +218,34 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       if (!mounted) {
         return;
       }
+
+      if (error.code == 'driver-booking') {
+        final TextDirection direction = Directionality.of(context);
+        final bool isRtl = direction == TextDirection.rtl;
+
+        await showDialog<void>(
+          context: context,
+          builder: (BuildContext dialogContext) {
+            final String title = isRtl ? 'تنبيه' : 'Alert';
+
+            return Directionality(
+              textDirection: direction,
+              child: AlertDialog(
+                title: Text(title),
+                content: const Text('You cannot book your own trip.'),
+                actions: <Widget>[
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: Text(isRtl ? 'حسناً' : 'OK'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+        return;
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(error.message),
@@ -1158,12 +1186,6 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
         icon: Icons.check_circle_outline,
         text: 'تم تأكيد حجزك',
       );
-    } else if (isSoldOut) {
-      action = _StatusBadge(
-        color: Colors.red.shade600,
-        icon: Icons.block,
-        text: 'اكتمل الحجز',
-      );
     } else if (requiresLogin) {
       action = _StatusBadge(
         color: colorScheme.primary,
@@ -1177,18 +1199,57 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
         text: 'الحجز غير متاح لهذه الرحلة',
       );
     } else {
-      action = FilledButton.icon(
-        onPressed: isBooking ? null : onBook,
-        icon: isBooking
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.event_seat),
-        label: Text(isBooking ? 'جاري الحجز...' : 'احجز الآن'),
+      final ButtonStyle purpleButtonStyle = FilledButton.styleFrom(
+        backgroundColor: const Color(0xFF6A1B9A),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       );
+
+      final ButtonStyle fullButtonStyle = FilledButton.styleFrom(
+        backgroundColor: Colors.grey.shade400,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      ).copyWith(
+        backgroundColor: MaterialStateProperty.resolveWith(
+          (Set<MaterialState> states) => Colors.grey.shade400,
+        ),
+        foregroundColor: MaterialStateProperty.resolveWith(
+          (Set<MaterialState> states) => Colors.white.withOpacity(
+            states.contains(MaterialState.disabled) ? 0.9 : 1,
+          ),
+        ),
+      );
+
+      if (isSoldOut) {
+        action = FilledButton.icon(
+          onPressed: null,
+          style: fullButtonStyle,
+          icon: const Icon(Icons.event_busy),
+          label: Text(isRtl ? 'مكتملة' : 'Full'),
+        );
+      } else {
+        final String bookingLabel = isRtl ? 'احجز الآن' : 'Book Now';
+        final String bookingInProgressLabel =
+            isRtl ? 'جاري الحجز...' : 'Booking...';
+
+        action = FilledButton.icon(
+          onPressed: isBooking ? null : onBook,
+          style: purpleButtonStyle,
+          icon: isBooking
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.event_seat),
+          label: Text(isBooking ? bookingInProgressLabel : bookingLabel),
+        );
+      }
     }
+
+    final String seatLabel = isRtl
+        ? 'عدد المقاعد المتاحة: ${availability.availableSeats}'
+        : 'Available seats: ${availability.availableSeats}';
 
     return Column(
       crossAxisAlignment: isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -1205,9 +1266,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                availability.totalSeats > 0
-                    ? 'المقاعد المتاحة: ${availability.availableSeats} / ${availability.totalSeats}'
-                    : 'المقاعد المتاحة: ${availability.availableSeats}',
+                seatLabel,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: colorScheme.primary,
                   fontWeight: FontWeight.w600,
@@ -1545,9 +1604,9 @@ class TripCard extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              totalSeats > 0
-                  ? 'المقاعد المتاحة: $availableSeats / $totalSeats'
-                  : 'المقاعد المتاحة: $availableSeats',
+              isRtl
+                  ? 'عدد المقاعد المتاحة: $availableSeats'
+                  : 'Available seats: $availableSeats',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.primary,
                 fontWeight: FontWeight.w600,
@@ -1612,6 +1671,8 @@ class TripCard extends StatelessWidget {
   Widget _buildBookingAction(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colorScheme = theme.colorScheme;
+    final TextDirection direction = Directionality.of(context);
+    final bool isRtl = direction == TextDirection.rtl;
 
     if (isOwnTrip) {
       return _StatusBadge(
@@ -1629,14 +1690,6 @@ class TripCard extends StatelessWidget {
       );
     }
 
-    if (isSoldOut) {
-      return _StatusBadge(
-        color: Colors.red.shade600,
-        icon: Icons.block,
-        text: 'اكتمل الحجز',
-      );
-    }
-
     if (requiresLogin) {
       return _StatusBadge(
         color: colorScheme.primary,
@@ -1645,8 +1698,42 @@ class TripCard extends StatelessWidget {
       );
     }
 
+    final ButtonStyle purpleButtonStyle = FilledButton.styleFrom(
+      backgroundColor: const Color(0xFF6A1B9A),
+      foregroundColor: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+    );
+
+    final ButtonStyle fullButtonStyle = FilledButton.styleFrom(
+      backgroundColor: Colors.grey.shade400,
+      foregroundColor: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+    ).copyWith(
+      backgroundColor: MaterialStateProperty.resolveWith(
+        (Set<MaterialState> states) => Colors.grey.shade400,
+      ),
+      foregroundColor: MaterialStateProperty.resolveWith(
+        (Set<MaterialState> states) => Colors.white.withOpacity(
+          states.contains(MaterialState.disabled) ? 0.9 : 1,
+        ),
+      ),
+    );
+
+    if (isSoldOut) {
+      return FilledButton.icon(
+        onPressed: null,
+        style: fullButtonStyle,
+        icon: const Icon(Icons.event_busy),
+        label: Text(isRtl ? 'مكتملة' : 'Full'),
+      );
+    }
+
+    final String bookingLabel = isRtl ? 'احجز الآن' : 'Book Now';
+    final String bookingInProgressLabel = isRtl ? 'جاري الحجز...' : 'Booking...';
+
     return FilledButton.icon(
       onPressed: isBooking ? null : onBook,
+      style: purpleButtonStyle,
       icon: isBooking
           ? const SizedBox(
               width: 18,
@@ -1654,7 +1741,7 @@ class TripCard extends StatelessWidget {
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           : const Icon(Icons.event_seat),
-      label: Text(isBooking ? 'جاري الحجز...' : 'احجز الآن'),
+      label: Text(isBooking ? bookingInProgressLabel : bookingLabel),
     );
   }
 }

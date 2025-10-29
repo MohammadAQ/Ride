@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'package:carpal_app/l10n/app_localizations.dart';
+import 'package:carpal_app/services/booking_service.dart';
 
 class MyBookingsScreen extends StatelessWidget {
   const MyBookingsScreen({super.key, this.showAppBar = true});
@@ -69,12 +70,14 @@ class MyBookingsScreen extends StatelessWidget {
                   itemCount: docs.length,
                   itemBuilder: (BuildContext context, int index) {
                     final QueryDocumentSnapshot<Map<String, dynamic>> bookingDoc = docs[index];
+                    final Map<String, dynamic> bookingData = bookingDoc.data();
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 16),
                       child: _BookingCard(
-                        tripId: bookingDoc.data()['tripId']?.toString() ?? '',
-                        status: bookingDoc.data()['status']?.toString() ?? 'confirmed',
-                        bookedAt: bookingDoc.data()['bookedAt'],
+                        tripId: bookingData['tripId']?.toString() ?? '',
+                        status: bookingData['status']?.toString() ?? 'confirmed',
+                        bookedAt: bookingData['bookedAt'],
+                        userId: bookingData['userId']?.toString() ?? user.uid,
                       ),
                     );
                   },
@@ -118,20 +121,38 @@ class MyBookingsScreen extends StatelessWidget {
   }
 }
 
-class _BookingCard extends StatelessWidget {
+class _BookingCard extends StatefulWidget {
   const _BookingCard({
     required this.tripId,
     required this.status,
+    required this.userId,
     this.bookedAt,
   });
 
   final String tripId;
   final String status;
+  final String userId;
   final dynamic bookedAt;
 
   @override
+  State<_BookingCard> createState() => _BookingCardState();
+}
+
+class _BookingCardState extends State<_BookingCard> {
+  final BookingService _bookingService = BookingService();
+  bool _isCancelling = false;
+
+  @override
+  void didUpdateWidget(covariant _BookingCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.status != widget.status && _isCancelling) {
+      _isCancelling = false;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (tripId.isEmpty) {
+    if (widget.tripId.isEmpty) {
       return _buildPlaceholderCard(
         context,
         'تعذر تحميل بيانات الرحلة لهذه الحجز.',
@@ -139,7 +160,7 @@ class _BookingCard extends StatelessWidget {
     }
 
     final DocumentReference<Map<String, dynamic>> tripRef =
-        FirebaseFirestore.instance.collection('trips').doc(tripId);
+        FirebaseFirestore.instance.collection('trips').doc(widget.tripId);
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: tripRef.snapshots(),
@@ -171,7 +192,6 @@ class _BookingCard extends StatelessWidget {
         final String driverName = (data['driverName'] ?? '').toString().trim();
         final String tripDate = (data['date'] ?? '').toString().trim();
         final String tripTime = (data['time'] ?? '').toString().trim();
-        final int totalSeats = _parseInt(data['totalSeats']);
         final int availableSeats = _parseInt(data['availableSeats']);
         final List<dynamic> bookedUsers = data['bookedUsers'] is List
             ? List<dynamic>.from(data['bookedUsers'] as List)
@@ -186,13 +206,29 @@ class _BookingCard extends StatelessWidget {
         final String routeText = isRtl
             ? 'من $fromCity → إلى $toCity'
             : 'From $fromCity → To $toCity';
-        final String seatSummary = totalSeats > 0
-            ? 'المقاعد المتاحة: $availableSeats / $totalSeats'
-            : 'المقاعد المتاحة: غير محدد';
-        final DateTime? bookedAtDate = _parseTimestamp(bookedAt);
+        final String seatSummary = isRtl
+            ? 'عدد المقاعد المتاحة: $availableSeats'
+            : 'Available seats: $availableSeats';
+        final DateTime? bookedAtDate = _parseTimestamp(widget.bookedAt);
         final String bookingDateText = bookedAtDate != null
             ? '${bookedAtDate.year.toString().padLeft(4, '0')}-${bookedAtDate.month.toString().padLeft(2, '0')}-${bookedAtDate.day.toString().padLeft(2, '0')} ${bookedAtDate.hour.toString().padLeft(2, '0')}:${bookedAtDate.minute.toString().padLeft(2, '0')}'
             : 'غير متاح';
+
+        final String statusLower = widget.status.toLowerCase();
+        final bool isConfirmed = statusLower == 'confirmed';
+        final bool isCanceled = statusLower == 'canceled';
+        final String statusLabel;
+        final Color statusColor;
+        if (isConfirmed) {
+          statusLabel = isRtl ? 'مؤكد' : 'Confirmed';
+          statusColor = Colors.green.shade700;
+        } else if (isCanceled) {
+          statusLabel = isRtl ? 'ملغى' : 'Canceled';
+          statusColor = Colors.red.shade600;
+        } else {
+          statusLabel = widget.status;
+          statusColor = colorScheme.primary;
+        }
 
         return Directionality(
           textDirection: direction,
@@ -300,15 +336,15 @@ class _BookingCard extends StatelessWidget {
                     children: <Widget>[
                       Icon(
                         Icons.check_circle_outline,
-                        color: Colors.green.shade600,
+                        color: statusColor,
                         size: 18,
                       ),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          'الحالة: ${status == 'confirmed' ? 'مؤكد' : status}',
+                          (isRtl ? 'الحالة: ' : 'Status: ') + statusLabel,
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            color: Colors.green.shade700,
+                            color: statusColor,
                             fontWeight: FontWeight.w600,
                           ),
                           textAlign: isRtl ? TextAlign.right : TextAlign.left,
@@ -328,7 +364,7 @@ class _BookingCard extends StatelessWidget {
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          'تاريخ الحجز: $bookingDateText',
+                          (isRtl ? 'تاريخ الحجز: ' : 'Booked at: ') + bookingDateText,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colorScheme.onSurface.withOpacity(0.7),
                           ),
@@ -342,13 +378,44 @@ class _BookingCard extends StatelessWidget {
                     Align(
                       alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
                       child: Text(
-                        'عدد الركاب المؤكدين: $bookedCount',
+                        isRtl
+                            ? 'عدد الركاب المؤكدين: $bookedCount'
+                            : 'Confirmed passengers: $bookedCount',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurface.withOpacity(0.6),
                         ),
                       ),
                     ),
                   ],
+                  if (isConfirmed)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 16),
+                      child: Align(
+                        alignment:
+                            isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                        child: FilledButton.icon(
+                          onPressed: _isCancelling ? null : _cancelBooking,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.red.shade600,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 12,
+                            ),
+                          ),
+                          icon: _isCancelling
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.cancel_outlined),
+                          label: Text(
+                            isRtl ? 'إلغاء الحجز' : 'Cancel Booking',
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -356,6 +423,63 @@ class _BookingCard extends StatelessWidget {
         );
       },
     );
+  }
+
+  Future<void> _cancelBooking() async {
+    if (widget.tripId.isEmpty || widget.userId.isEmpty) {
+      return;
+    }
+    if (_isCancelling) {
+      return;
+    }
+
+    setState(() {
+      _isCancelling = true;
+    });
+
+    try {
+      await _bookingService.cancelBooking(
+        tripId: widget.tripId,
+        userId: widget.userId,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Booking canceled successfully'),
+        ),
+      );
+    } on BookingException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر إلغاء الحجز. حاول مرة أخرى لاحقًا.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isCancelling = false;
+      });
+    }
   }
 
   Card _buildPlaceholderCard(BuildContext context, String message) {
