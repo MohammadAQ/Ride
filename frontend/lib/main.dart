@@ -2,10 +2,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:carpal_app/screens/auth_screen.dart';
 import 'package:carpal_app/screens/home_screen.dart';
+import 'package:carpal_app/services/notification_service.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
 
@@ -14,15 +16,31 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  await NotificationService.instance.initialize();
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationService.instance.handlePendingNavigation();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: NotificationService.instance.navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'Carpal App',
       onGenerateTitle: (context) => context.translate('app_title'),
@@ -437,6 +455,11 @@ class AuthWrapper extends StatelessWidget {
         }
 
         if (snapshot.hasData) {
+          final User? user = snapshot.data;
+          if (user != null) {
+            NotificationService.instance.saveToken(user.uid);
+            NotificationService.instance.handlePendingNavigation();
+          }
           return const HomeScreen();
         } else {
           return const AuthScreen();
