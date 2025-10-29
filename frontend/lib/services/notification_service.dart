@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_functions/firebase_functions.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -394,7 +394,8 @@ class NotificationService {
       return;
     }
 
-    final bool? granted = await androidImplementation.requestPermission();
+    final bool? granted =
+        await androidImplementation.requestNotificationsPermission();
     if (kDebugMode) {
       debugPrint('Android notification permission granted: $granted');
     }
