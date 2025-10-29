@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
@@ -471,9 +472,8 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
   @override
   Widget build(BuildContext context) {
     final gradientColors = [
-      const Color(0xFFF3E5F5),
       const Color(0xFFEDE7F6),
-      const Color(0xFFE8EAF6),
+      Theme.of(context).colorScheme.primary.withOpacity(0.08),
       const Color(0xFFD1C4E9),
     ];
 
@@ -621,17 +621,30 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
         final dateText = _formatDate(data['date']);
         final timeText = _formatTime(data['time']);
         final priceText = _formatPrice(data['price']);
+        final driverName = _extractDriverName(data);
+        final availableSeats = _parseSeatCount(data['availableSeats']);
+        final carModel = _extractCarModel(data);
+        final carColor = _extractCarColor(data);
+        final createdAt = _extractCreatedAt(data);
+        final textDirection = Directionality.of(context);
 
         final isProcessing = data['_isProcessing'] == true;
         final isDeleting = data['_isDeleting'] == true;
 
         Widget card = MyTripCard(
-          fromCity: fromCity.isEmpty ? 'غير متوفر' : fromCity,
-          toCity: toCity.isEmpty ? 'غير متوفر' : toCity,
-          date: dateText.isEmpty ? 'غير متوفر' : dateText,
-          time: timeText.isEmpty ? 'غير متوفر' : timeText,
+          fromCity: fromCity,
+          toCity: toCity,
+          tripDate: dateText,
+          tripTime: timeText,
+          driverName: driverName,
+          availableSeats: availableSeats,
           price: priceText,
+          carModel: carModel,
+          carColor: carColor,
+          createdAt: createdAt,
+          textDirection: textDirection,
           onLongPress: isProcessing ? null : () => _showTripOptions(data),
+          onViewDetails: () => _handleViewTripDetails(data),
         );
 
         if (isProcessing) {
@@ -747,6 +760,206 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
   }
 
   String _twoDigits(int value) => value.toString().padLeft(2, '0');
+
+  String _extractDriverName(Map<String, dynamic> trip) {
+    final directName = _stringOrNull(trip['driverName']) ??
+        _stringOrNull(trip['driver_name']) ??
+        _stringOrNull(trip['driverFullName']) ??
+        _stringOrNull(trip['driver_full_name']);
+    if (directName != null) {
+      return directName;
+    }
+
+    final driverData = trip['driver'];
+    if (driverData is Map) {
+      final driverMap = driverData.map((key, value) => MapEntry(key.toString(), value));
+      final nestedName = _stringOrNull(driverMap['name']) ??
+          _stringOrNull(driverMap['fullName']) ??
+          _stringOrNull(driverMap['full_name']) ??
+          _stringOrNull(driverMap['displayName']) ??
+          _stringOrNull(driverMap['display_name']);
+      if (nestedName != null) {
+        return nestedName;
+      }
+
+      final firstName = _stringOrNull(driverMap['firstName']) ??
+          _stringOrNull(driverMap['first_name']);
+      final lastName = _stringOrNull(driverMap['lastName']) ??
+          _stringOrNull(driverMap['last_name']);
+      final combined = [firstName, lastName].whereType<String>().join(' ').trim();
+      if (combined.isNotEmpty) {
+        return combined;
+      }
+    }
+
+    if (driverData is String) {
+      final driverString = driverData.trim();
+      if (driverString.isNotEmpty) {
+        return driverString;
+      }
+    }
+
+    return '';
+  }
+
+  int _parseSeatCount(dynamic value) {
+    if (value == null) {
+      return 0;
+    }
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    final parsed = int.tryParse(value.toString());
+    return parsed ?? 0;
+  }
+
+  String? _extractCarModel(Map<String, dynamic> trip) {
+    final directModel = _stringOrNull(trip['carModel']) ??
+        _stringOrNull(trip['car_model']) ??
+        _stringOrNull(trip['vehicleModel']) ??
+        _stringOrNull(trip['vehicle_model']);
+    if (directModel != null) {
+      return directModel;
+    }
+
+    final carData = trip['car'] ?? trip['vehicle'];
+    if (carData is Map) {
+      final carMap = carData.map((key, value) => MapEntry(key.toString(), value));
+      final nestedModel = _stringOrNull(carMap['model']) ??
+          _stringOrNull(carMap['name']) ??
+          _stringOrNull(carMap['type']);
+      if (nestedModel != null) {
+        return nestedModel;
+      }
+    }
+
+    if (carData is String) {
+      final trimmed = carData.trim();
+      if (trimmed.isNotEmpty) {
+        return trimmed;
+      }
+    }
+
+    return null;
+  }
+
+  String? _extractCarColor(Map<String, dynamic> trip) {
+    final directColor = _stringOrNull(trip['carColor']) ??
+        _stringOrNull(trip['car_color']) ??
+        _stringOrNull(trip['vehicleColor']) ??
+        _stringOrNull(trip['vehicle_color']);
+    if (directColor != null) {
+      return directColor;
+    }
+
+    final carData = trip['car'] ?? trip['vehicle'];
+    if (carData is Map) {
+      final carMap = carData.map((key, value) => MapEntry(key.toString(), value));
+      final nestedColor = _stringOrNull(carMap['color']) ??
+          _stringOrNull(carMap['colour']);
+      if (nestedColor != null) {
+        return nestedColor;
+      }
+    }
+
+    if (carData is String) {
+      final trimmed = carData.trim();
+      if (trimmed.isNotEmpty) {
+        return trimmed;
+      }
+    }
+
+    return null;
+  }
+
+  DateTime? _extractCreatedAt(Map<String, dynamic> trip) {
+    const possibleKeys = [
+      'createdAt',
+      'created_at',
+      'createdOn',
+      'created_on',
+      'createdDate',
+      'created_date',
+      'created',
+      'createdTime',
+      'created_time',
+    ];
+
+    for (final key in possibleKeys) {
+      if (!trip.containsKey(key)) {
+        continue;
+      }
+      final parsed = _parseDateTimeValue(trip[key]);
+      if (parsed != null) {
+        return parsed;
+      }
+    }
+
+    final metadata = trip['metadata'];
+    if (metadata is Map) {
+      final metaMap = metadata.map((key, value) => MapEntry(key.toString(), value));
+      for (final key in possibleKeys) {
+        if (!metaMap.containsKey(key)) {
+          continue;
+        }
+        final parsed = _parseDateTimeValue(metaMap[key]);
+        if (parsed != null) {
+          return parsed;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  DateTime? _parseDateTimeValue(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+    if (value is DateTime) {
+      return value;
+    }
+    if (value is num) {
+      if (value > 1000000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(value.toInt());
+      }
+      if (value > 1000000000) {
+        return DateTime.fromMillisecondsSinceEpoch((value * 1000).toInt());
+      }
+      return DateTime.fromMillisecondsSinceEpoch(value.toInt());
+    }
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) {
+        return null;
+      }
+      final parsed = DateTime.tryParse(trimmed);
+      if (parsed != null) {
+        return parsed;
+      }
+      final numeric = num.tryParse(trimmed);
+      if (numeric != null) {
+        return _parseDateTimeValue(numeric);
+      }
+    }
+    try {
+      final dynamic dynamicValue = value;
+      final dynamic converted = dynamicValue.toDate();
+      if (converted is DateTime) {
+        return converted;
+      }
+    } catch (_) {
+      // Ignore values that cannot be converted via toDate.
+    }
+    return null;
+  }
+
+  void _handleViewTripDetails(Map<String, dynamic> trip) {
+    debugPrint('Trip details: $trip');
+  }
 }
 
 class MyTripCard extends StatelessWidget {
@@ -754,93 +967,288 @@ class MyTripCard extends StatelessWidget {
     super.key,
     required this.fromCity,
     required this.toCity,
-    required this.date,
-    required this.time,
+    required this.tripDate,
+    required this.tripTime,
+    required this.driverName,
+    required this.availableSeats,
     required this.price,
+    this.carModel,
+    this.carColor,
+    this.createdAt,
+    required this.textDirection,
     this.onLongPress,
+    this.onViewDetails,
   });
 
   final String fromCity;
   final String toCity;
-  final String date;
-  final String time;
+  final String tripDate;
+  final String tripTime;
+  final String driverName;
+  final int availableSeats;
   final String price;
+  final String? carModel;
+  final String? carColor;
+  final DateTime? createdAt;
+  final TextDirection textDirection;
   final VoidCallback? onLongPress;
+  final VoidCallback? onViewDetails;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final isRtl = textDirection == TextDirection.rtl;
 
-    return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-      ),
-      color: colorScheme.surface.withOpacity(0.95),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onLongPress: onLongPress,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Directionality(
-                textDirection: TextDirection.rtl,
-                child: Row(
+    final fromCityLabel = fromCity.isEmpty
+        ? (isRtl ? 'غير متوفر' : 'Not available')
+        : fromCity;
+    final toCityLabel = toCity.isEmpty
+        ? (isRtl ? 'غير متوفر' : 'Not available')
+        : toCity;
+    final dateLabel = tripDate.isEmpty
+        ? (isRtl ? 'غير متوفر' : 'Not available')
+        : tripDate;
+    final timeLabel = tripTime.isEmpty
+        ? (isRtl ? 'غير متوفر' : 'Not available')
+        : tripTime;
+    final driverLabel = driverName.isEmpty
+        ? (isRtl ? 'غير متاح' : 'Not available')
+        : driverName;
+    final priceLabel = price.isEmpty
+        ? (isRtl ? 'غير متاح' : 'Not available')
+        : price;
+    final carDescription = _buildCarDescription(isRtl);
+    final createdAtLabel = _formatCreatedAt(isRtl);
+
+    return Directionality(
+      textDirection: textDirection,
+      child: Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+        color: colorScheme.surface.withOpacity(0.96),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onLongPress: onLongPress,
+          child: Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(20, 18, 20, 18),
+            child: Column(
+              crossAxisAlignment:
+                  isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  textDirection: textDirection,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Icon(
                       Icons.directions_car,
                       color: colorScheme.primary,
-                      size: 20,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 12),
                     Expanded(
-                      child: Text(
-                        'من: $fromCity  →  إلى: $toCity',
-                        style: textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                          color: colorScheme.onSurface,
+                      child: Text.rich(
+                        TextSpan(
+                          style: textTheme.titleMedium?.copyWith(
+                            color: colorScheme.onSurface,
+                          ),
+                          children: [
+                            TextSpan(text: isRtl ? 'من ' : 'From '),
+                            TextSpan(
+                              text: fromCityLabel,
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            TextSpan(text: isRtl ? ' إلى ' : ' to '),
+                            TextSpan(
+                              text: toCityLabel,
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ],
                         ),
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.right,
+                        textAlign: isRtl ? TextAlign.right : TextAlign.left,
                       ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 12),
-              Directionality(
-                textDirection: TextDirection.rtl,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '$date  •  $time',
-                        style: textTheme.bodyMedium?.copyWith(
-                          color: colorScheme.onSurface.withOpacity(0.8),
-                        ),
-                        textAlign: TextAlign.right,
-                      ),
+                const SizedBox(height: 12),
+                _InfoRow(
+                  icon: Icons.event,
+                  textDirection: textDirection,
+                  iconColor: colorScheme.onSurface.withOpacity(0.7),
+                  child: Text(
+                    '$dateLabel • $timeLabel',
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurface.withOpacity(0.8),
                     ),
-                    Text(
-                      price,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _InfoRow(
+                  icon: Icons.person_outline,
+                  textDirection: textDirection,
+                  iconColor: colorScheme.onSurface.withOpacity(0.7),
+                  child: Text.rich(
+                    TextSpan(
                       style: textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.primary,
+                        color: colorScheme.onSurface.withOpacity(0.85),
                       ),
+                      children: [
+                        TextSpan(text: isRtl ? 'السائق: ' : 'Driver: '),
+                        TextSpan(
+                          text: driverLabel,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ],
                     ),
-                  ],
+                    textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                _InfoRow(
+                  icon: Icons.event_seat,
+                  textDirection: textDirection,
+                  iconColor: colorScheme.primary,
+                  child: Text(
+                    (isRtl ? 'المقاعد المتاحة: ' : 'Available seats: ') +
+                        availableSeats.toString(),
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _InfoRow(
+                  icon: Icons.attach_money,
+                  textDirection: textDirection,
+                  iconColor: colorScheme.onSurface.withOpacity(0.7),
+                  child: Text(
+                    (isRtl ? 'السعر: ' : 'Price: ') + priceLabel,
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurface.withOpacity(0.85),
+                    ),
+                    textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                  ),
+                ),
+                if (carDescription != null) ...[
+                  const SizedBox(height: 12),
+                  _InfoRow(
+                    icon: Icons.directions_car_filled_outlined,
+                    textDirection: textDirection,
+                    iconColor: colorScheme.onSurface.withOpacity(0.7),
+                    child: Text(
+                      (isRtl ? 'المركبة: ' : 'Vehicle: ') + carDescription,
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurface.withOpacity(0.8),
+                      ),
+                      textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                _InfoRow(
+                  icon: Icons.schedule,
+                  textDirection: textDirection,
+                  iconColor: colorScheme.onSurface.withOpacity(0.6),
+                  child: Text(
+                    (isRtl ? 'تاريخ الإنشاء: ' : 'Created at: ') +
+                        createdAtLabel,
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurface.withOpacity(0.7),
+                    ),
+                    textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                  ),
+                ),
+                if (onViewDetails != null) ...[
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: FilledButton.tonal(
+                      onPressed: onViewDetails,
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        backgroundColor: colorScheme.primary.withOpacity(0.12),
+                        foregroundColor: colorScheme.primary,
+                        textStyle: textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      icon: const Icon(Icons.remove_red_eye_outlined, size: 18),
+                      label: Text(isRtl ? 'عرض التفاصيل' : 'View Details'),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  String? _buildCarDescription(bool isRtl) {
+    final model = carModel?.trim();
+    final color = carColor?.trim();
+
+    if ((model == null || model.isEmpty) && (color == null || color.isEmpty)) {
+      return null;
+    }
+
+    if (model != null && model.isNotEmpty && color != null && color.isNotEmpty) {
+      return isRtl ? '$model - $color' : '$model • $color';
+    }
+
+    return (model != null && model.isNotEmpty) ? model : color;
+  }
+
+  String _formatCreatedAt(bool isRtl) {
+    if (createdAt == null) {
+      return isRtl ? 'غير متاح' : 'Not available';
+    }
+
+    final year = createdAt!.year.toString().padLeft(4, '0');
+    final month = createdAt!.month.toString().padLeft(2, '0');
+    final day = createdAt!.day.toString().padLeft(2, '0');
+    final hour = createdAt!.hour.toString().padLeft(2, '0');
+    final minute = createdAt!.minute.toString().padLeft(2, '0');
+
+    return '$year-$month-$day $hour:$minute';
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({
+    required this.icon,
+    required this.child,
+    required this.textDirection,
+    this.iconColor,
+  });
+
+  final IconData icon;
+  final Widget child;
+  final TextDirection textDirection;
+  final Color? iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      textDirection: textDirection,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          icon,
+          color: iconColor ?? Theme.of(context).colorScheme.onSurface,
+          size: 18,
+        ),
+        const SizedBox(width: 6),
+        Expanded(child: child),
+      ],
     );
   }
 }
