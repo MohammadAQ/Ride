@@ -2,12 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_functions/firebase_functions.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:http/http.dart' as http;
 
 import '../firebase_options.dart';
 import '../screens/trip_dashboard_screen.dart';
@@ -37,9 +38,11 @@ class NotificationService {
 
   static final NotificationService instance = NotificationService._();
 
+  static const String _functionsRegion = 'us-central1';
+
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  late final FirebaseFunctions _functions;
   final FlutterLocalNotificationsPlugin _localNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
@@ -63,8 +66,6 @@ class NotificationService {
       return;
     }
     _initialized = true;
-
-    _functions = FirebaseFunctions.instanceFor(app: Firebase.app());
 
     final NotificationSettings settings = await _messaging.requestPermission(
       alert: true,
@@ -355,17 +356,10 @@ class NotificationService {
         return;
       }
 
-      final HttpsCallable callable =
-          _functions.httpsCallable('sendTestNotification');
-      final HttpsCallableResult<dynamic> response = await callable.call(
+      final Map<String, dynamic> data = await _callHttpsCallable(
+        'sendTestNotification',
         <String, dynamic>{'token': token},
       );
-
-      final Map<String, dynamic> data =
-          (response.data as Map<dynamic, dynamic>?)
-                  ?.map((dynamic key, dynamic value) =>
-                      MapEntry<String, dynamic>(key.toString(), value)) ??
-              <String, dynamic>{};
       final int targetCount = (data['targetCount'] as num?)?.toInt() ?? 0;
       final int successCount = (data['successCount'] as num?)?.toInt() ?? 0;
       final int failureCount = (data['failureCount'] as num?)?.toInt() ?? 0;
@@ -373,17 +367,104 @@ class NotificationService {
       _showGlobalSnackBar(
         'تم إرسال الإشعار التجريبي ($successCount من $targetCount، أخطاء: $failureCount).',
       );
-    } on FirebaseFunctionsException catch (error, stackTrace) {
+    } on NotificationServiceException catch (error, stackTrace) {
       if (kDebugMode) {
         debugPrint('sendTestNotification failed: $error\n$stackTrace');
       }
-      _showGlobalSnackBar('تعذّر إرسال الإشعار التجريبي: ${error.message ?? error.code}.');
+      final String message = error.message.trim();
+      _showGlobalSnackBar(
+        message.isEmpty
+            ? 'تعذّر إرسال الإشعار التجريبي.'
+            : 'تعذّر إرسال الإشعار التجريبي: $message.',
+      );
     } catch (error, stackTrace) {
       if (kDebugMode) {
         debugPrint('sendTestNotification unexpected error: $error\n$stackTrace');
       }
       _showGlobalSnackBar('تعذّر إرسال الإشعار التجريبي. حاول مرة أخرى لاحقًا.');
     }
+  }
+
+  Future<Map<String, dynamic>> _callHttpsCallable(
+    String functionName,
+    Map<String, dynamic> payload,
+  ) async {
+    final User? user = _auth.currentUser;
+    if (user == null) {
+      throw const NotificationServiceException(
+        code: 'unauthenticated',
+        message: 'يجب تسجيل الدخول أولًا.',
+      );
+    }
+
+    final String idToken = await user.getIdToken();
+    final FirebaseApp app = Firebase.app();
+    final String projectId = app.options.projectId ?? '';
+    if (projectId.isEmpty) {
+      throw const NotificationServiceException(
+        code: 'missing-project-id',
+        message: 'معرّف مشروع Firebase غير مهيأ.',
+      );
+    }
+
+    final Uri uri = Uri.https(
+      '$_functionsRegion-$projectId.cloudfunctions.net',
+      functionName,
+    );
+
+    final http.Response response = await http.post(
+      uri,
+      headers: <String, String>{
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $idToken',
+      },
+      body: jsonEncode(<String, dynamic>{'data': payload}),
+    );
+
+    Map<String, dynamic> decodedBody;
+    try {
+      decodedBody = jsonDecode(response.body) as Map<String, dynamic>;
+    } on FormatException {
+      throw NotificationServiceException(
+        code: response.statusCode.toString(),
+        message: 'استجابة غير صالحة من الدالة السحابية.',
+      );
+    }
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final Object? result = decodedBody['result'];
+      if (result is Map<dynamic, dynamic>) {
+        return result.map(
+          (dynamic key, dynamic value) =>
+              MapEntry<String, dynamic>(key.toString(), value),
+        );
+      }
+      if (result is Map<String, dynamic>) {
+        return result;
+      }
+      return <String, dynamic>{};
+    }
+
+    final Map<String, dynamic> error =
+        _asStringKeyedMap(decodedBody['error']) ?? <String, dynamic>{};
+    final String message = error['message']?.toString() ??
+        'فشل استدعاء الدالة السحابية (HTTP ${response.statusCode}).';
+    final String code = error['status']?.toString() ??
+        response.statusCode.toString();
+    throw NotificationServiceException(code: code, message: message);
+  }
+
+  Map<String, dynamic>? _asStringKeyedMap(Object? input) {
+    if (input is Map<String, dynamic>) {
+      return input;
+    }
+    if (input is Map) {
+      return input.map(
+        (dynamic key, dynamic value) =>
+            MapEntry<String, dynamic>(key.toString(), value),
+      );
+    }
+    return null;
   }
 
   Future<void> _requestAndroidNotificationPermission() async {
@@ -442,6 +523,17 @@ class NotificationService {
     }
     return null;
   }
+}
+
+class NotificationServiceException implements Exception {
+  const NotificationServiceException({required this.code, required this.message});
+
+  final String code;
+  final String message;
+
+  @override
+  String toString() =>
+      'NotificationServiceException(code: $code, message: $message)';
 }
 
 @pragma('vm:entry-point')
