@@ -53,12 +53,6 @@ class _MainScreenState extends State<MainScreen> {
         foregroundColor: Colors.white,
       ),
       body: _destinations[_selectedIndex].page,
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          debugPrint('Button pressed!');
-        },
-        child: const Icon(Icons.add),
-      ),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: _selectedIndex,
