@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 
 import 'package:carpal_app/models/user_profile.dart';
 import 'package:carpal_app/widgets/user_profile_preview.dart';
