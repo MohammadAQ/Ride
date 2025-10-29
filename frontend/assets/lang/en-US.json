@@ -1,3 +1,8 @@
 {
-  "app_title": "Share a Ride"
+  "app_title": "Share a Ride",
+  "nav_profile": "Profile",
+  "nav_global_chat": "Global Chat",
+  "nav_create_trip": "Create Trip",
+  "nav_my_trips": "My Trips",
+  "nav_search_trips": "Search Trips"
 }
