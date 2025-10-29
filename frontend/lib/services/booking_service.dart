@@ -63,11 +63,25 @@ class BookingService {
         throw BookingException('already-booked', 'لقد قمت بحجز هذه الرحلة مسبقًا.');
       }
 
-      final DocumentSnapshot<Map<String, dynamic>> existingBooking =
-          await transaction.get(bookingRef);
-      if (existingBooking.exists) {
+    final DocumentSnapshot<Map<String, dynamic>> existingBooking =
+        await transaction.get(bookingRef);
+
+    Map<String, dynamic>? existingBookingData;
+    String existingBookingStatus = '';
+
+    if (existingBooking.exists) {
+      existingBookingData = existingBooking.data();
+      if (existingBookingData == null) {
+        throw BookingException('invalid-data', 'تعذر قراءة بيانات الحجز.');
+      }
+
+      existingBookingStatus =
+          _parseString(existingBookingData['status']).toLowerCase();
+
+      if (existingBookingStatus != 'canceled') {
         throw BookingException('already-booked', 'لقد قمت بحجز هذه الرحلة مسبقًا.');
       }
+    }
 
       final int availableSeats = _parseInt(tripData['availableSeats']);
       if (availableSeats <= 0) {
@@ -86,14 +100,23 @@ class BookingService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      transaction.set(bookingRef, <String, dynamic>{
-        'userId': userId,
-        'tripId': tripId,
-        'driverId': driverId,
-        'status': 'confirmed',
-        'bookedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      if (existingBookingStatus == 'canceled') {
+        transaction.update(bookingRef, <String, dynamic>{
+          'status': 'confirmed',
+          'bookedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+          'canceledAt': FieldValue.delete(),
+        });
+      } else {
+        transaction.set(bookingRef, <String, dynamic>{
+          'userId': userId,
+          'tripId': tripId,
+          'driverId': driverId,
+          'status': 'confirmed',
+          'bookedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
     });
   }
 
@@ -160,21 +183,16 @@ class BookingService {
         throw BookingException('not-booked', 'لم تقم بحجز هذه الرحلة.');
       }
 
-      final List<String> updatedBookedUsers = List<String>.from(bookedUsers)
-        ..removeWhere((String id) => id == userId);
-
       final int availableSeats = _parseInt(tripData['availableSeats']);
       final int totalSeats = _parseInt(tripData['totalSeats']);
       final int increasedSeats = availableSeats + 1;
-      final int expectedAvailable = totalSeats > 0
-          ? totalSeats - updatedBookedUsers.length
-          : increasedSeats;
+      final int maxSeats = totalSeats > 0 ? totalSeats : increasedSeats;
       final int sanitizedAvailable =
-          expectedAvailable < 0 ? 0 : expectedAvailable;
+          increasedSeats > maxSeats ? maxSeats : increasedSeats;
 
       transaction.update(tripRef, <String, dynamic>{
         'availableSeats': sanitizedAvailable,
-        'bookedUsers': updatedBookedUsers,
+        'bookedUsers': FieldValue.arrayRemove(<String>[userId]),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
