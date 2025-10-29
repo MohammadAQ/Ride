@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
 import 'create_trip_screen.dart';
+import 'trip_dashboard_screen.dart';
 
 class MyTripsScreen extends StatefulWidget {
   const MyTripsScreen({super.key, this.showAppBar = true});
@@ -615,7 +616,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
         }
 
         final data = _trips[index];
-        final tripId = _stringOrNull(data['id']) ?? 'trip-$index';
+        final tripId = _resolveTripId(data, index);
         final fromCity = (data['fromCity'] ?? '').toString().trim();
         final toCity = (data['toCity'] ?? '').toString().trim();
         final dateText = _formatDate(data['date']);
@@ -631,6 +632,20 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
         final isProcessing = data['_isProcessing'] == true;
         final isDeleting = data['_isDeleting'] == true;
 
+        final TripDashboardArguments dashboardArgs = TripDashboardArguments(
+          tripId: tripId,
+          fromCity: fromCity,
+          toCity: toCity,
+          tripDate: dateText,
+          tripTime: timeText,
+          driverName: driverName,
+          availableSeats: availableSeats,
+          price: priceText,
+          carModel: carModel,
+          carColor: carColor,
+          createdAt: createdAt,
+        );
+
         Widget card = MyTripCard(
           fromCity: fromCity,
           toCity: toCity,
@@ -644,7 +659,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
           createdAt: createdAt,
           textDirection: textDirection,
           onLongPress: isProcessing ? null : () => _showTripOptions(data),
-          onViewDetails: () => _handleViewTripDetails(data),
+          onTap: () => _handleViewTripDetails(dashboardArgs),
         );
 
         if (isProcessing) {
@@ -760,6 +775,37 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
   }
 
   String _twoDigits(int value) => value.toString().padLeft(2, '0');
+
+  String _resolveTripId(Map<String, dynamic> trip, int fallbackIndex) {
+    const List<String> possibleKeys = <String>[
+      'id',
+      'tripId',
+      'trip_id',
+      'documentId',
+      'document_id',
+    ];
+
+    for (final String key in possibleKeys) {
+      final String? value = _stringOrNull(trip[key]);
+      if (value != null) {
+        return value;
+      }
+    }
+
+    final dynamic metadata = trip['metadata'];
+    if (metadata is Map) {
+      final Map<String, dynamic> metadataMap =
+          metadata.map((key, value) => MapEntry(key.toString(), value));
+      for (final String key in possibleKeys) {
+        final String? value = _stringOrNull(metadataMap[key]);
+        if (value != null) {
+          return value;
+        }
+      }
+    }
+
+    return 'trip-$fallbackIndex';
+  }
 
   String _extractDriverName(Map<String, dynamic> trip) {
     final directName = _stringOrNull(trip['driverName']) ??
@@ -957,8 +1003,31 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
     return null;
   }
 
-  void _handleViewTripDetails(Map<String, dynamic> trip) {
-    debugPrint('Trip details: $trip');
+  void _handleViewTripDetails(TripDashboardArguments arguments) {
+    if (!mounted) {
+      return;
+    }
+
+    if (arguments.tripId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Directionality.of(context) == TextDirection.rtl
+                ? 'تعذر فتح لوحة الرحلة لعدم توفر معرّف صالح.'
+                : 'Unable to open the trip dashboard without a valid trip ID.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => TripDashboardScreen(
+          arguments: arguments,
+        ),
+      ),
+    );
   }
 }
 
@@ -977,7 +1046,7 @@ class MyTripCard extends StatelessWidget {
     this.createdAt,
     required this.textDirection,
     this.onLongPress,
-    this.onViewDetails,
+    this.onTap,
   });
 
   final String fromCity;
@@ -992,7 +1061,7 @@ class MyTripCard extends StatelessWidget {
   final DateTime? createdAt;
   final TextDirection textDirection;
   final VoidCallback? onLongPress;
-  final VoidCallback? onViewDetails;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1032,6 +1101,7 @@ class MyTripCard extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(18),
           onLongPress: onLongPress,
+          onTap: onTap,
           child: Padding(
             padding: const EdgeInsetsDirectional.fromSTEB(20, 18, 20, 18),
             child: Column(
@@ -1162,28 +1232,6 @@ class MyTripCard extends StatelessWidget {
                     textAlign: isRtl ? TextAlign.right : TextAlign.left,
                   ),
                 ),
-                  if (onViewDetails != null) ...[
-                    const SizedBox(height: 16),
-                    Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: FilledButton.icon(
-                        onPressed: onViewDetails,
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          backgroundColor: colorScheme.primary.withOpacity(0.12),
-                          foregroundColor: colorScheme.primary,
-                          textStyle: textTheme.labelLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        icon: const Icon(Icons.remove_red_eye_outlined, size: 18),
-                        label: Text(isRtl ? 'عرض التفاصيل' : 'View Details'),
-                      ),
-                    ),
-                  ],
               ],
             ),
           ),
