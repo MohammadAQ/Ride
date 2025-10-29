@@ -186,6 +186,16 @@ components:
           type: string
         notes:
           type: string
+        totalSeats:
+          type: integer
+          minimum: 1
+        availableSeats:
+          type: integer
+          minimum: 0
+        bookedUsers:
+          type: array
+          items:
+            type: string
         createdAt:
           type: string
           format: date-time
@@ -213,6 +223,7 @@ components:
         - carModel
         - carColor
         - phoneNumber
+        - totalSeats
       properties:
         fromCity:
           type: string
@@ -235,6 +246,9 @@ components:
           type: string
         notes:
           type: string
+        totalSeats:
+          type: integer
+          minimum: 1
     UpdateTripRequest:
       type: object
       properties:
@@ -258,3 +272,9 @@ components:
           type: string
         notes:
           type: string
+        totalSeats:
+          type: integer
+          minimum: 1
+        availableSeats:
+          type: integer
+          minimum: 0

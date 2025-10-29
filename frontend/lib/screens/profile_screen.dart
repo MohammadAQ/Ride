@@ -85,6 +85,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       'joinedUserIds',
       'memberIds',
       'members',
+      'bookedUsers',
     ];
 
     for (final String field in membershipFields) {

@@ -38,6 +38,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _dateController = TextEditingController();
   final TextEditingController _timeController = TextEditingController();
+  final TextEditingController _seatsController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
   final TextEditingController _carModelController = TextEditingController();
   final TextEditingController _carColorController = TextEditingController();
@@ -67,6 +68,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   void dispose() {
     _dateController.dispose();
     _timeController.dispose();
+    _seatsController.dispose();
     _priceController.dispose();
     _carModelController.dispose();
     _carColorController.dispose();
@@ -181,6 +183,17 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     if (phoneNumber != null) {
       _phoneController.text = phoneNumber;
     }
+
+    final dynamic totalSeatsValue = trip['totalSeats'];
+    if (totalSeatsValue is num) {
+      _seatsController.text = totalSeatsValue.toInt().toString();
+    } else {
+      final String? seatsText =
+          _stringOrNull(totalSeatsValue) ?? _stringOrNull(trip['availableSeats']);
+      if (seatsText != null) {
+        _seatsController.text = seatsText;
+      }
+    }
   }
 
   String? _stringOrNull(dynamic value) {
@@ -275,12 +288,24 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     final String carModel = _carModelController.text.trim();
     final String carColor = _carColorController.text.trim();
     final String phoneNumber = _phoneController.text.trim();
+    final int? totalSeats = int.tryParse(_seatsController.text.trim());
     if (price == null) {
       // Should not happen because validator already checks this, but guard anyway.
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('يرجى إدخال سعر صالح.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    if (totalSeats == null || totalSeats <= 0) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('يرجى إدخال عدد مقاعد صالح.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -322,6 +347,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       'carModel': carModel,
       'carColor': carColor,
       'phoneNumber': phoneNumber,
+      'totalSeats': totalSeats,
     };
 
     try {
@@ -369,6 +395,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
         });
         _dateController.clear();
         _timeController.clear();
+        _seatsController.clear();
         _priceController.clear();
         _carModelController.clear();
         _carColorController.clear();
@@ -568,6 +595,34 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                           validator: (value) {
                             if (_selectedTime == null) {
                               return 'يرجى اختيار وقت الرحلة';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _seatsController,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: <TextInputFormatter>[
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          decoration: const InputDecoration(
+                            labelText: 'عدد المقاعد المتاحة',
+                            hintText: 'أدخل عدد المقاعد في السيارة',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Padding(
+                              padding: EdgeInsetsDirectional.only(start: 12, end: 8),
+                              child: Text('💺'),
+                            ),
+                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'يرجى إدخال عدد المقاعد.';
+                            }
+                            final int? seats = int.tryParse(value.trim());
+                            if (seats == null || seats <= 0) {
+                              return 'أدخل رقمًا صحيحًا أكبر من صفر';
                             }
                             return null;
                           },

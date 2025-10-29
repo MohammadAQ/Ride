@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +10,7 @@ import 'package:carpal_app/models/user_profile.dart';
 import 'package:carpal_app/widgets/user_profile_preview.dart';
 
 import '../services/api_service.dart';
+import '../services/booking_service.dart';
 
 const MethodChannel _phoneLauncherChannel =
     MethodChannel('com.example.carpal_app/phone_launcher');
@@ -61,6 +64,7 @@ class SearchTripsScreen extends StatefulWidget {
 
 class _SearchTripsScreenState extends State<SearchTripsScreen> {
   final ApiService _apiService = ApiService();
+  final BookingService _bookingService = BookingService();
   final List<Map<String, dynamic>> _trips = <Map<String, dynamic>>[];
   String? _selectedFromCity;
   String? _selectedToCity;
@@ -70,11 +74,29 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
   bool _isLoading = false;
   bool _initialLoading = true;
   String? _errorMessage;
+  final Set<String> _bookingInProgress = <String>{};
+  User? _currentUser;
+  StreamSubscription<User?>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
+    _currentUser = FirebaseAuth.instance.currentUser;
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((User? user) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _currentUser = user;
+      });
+    });
     unawaited(_fetchTrips(reset: true));
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   TextDirection _effectiveTextDirection(BuildContext context) {
@@ -156,10 +178,82 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
 
   Future<void> _onRefresh() => _fetchTrips(reset: true);
 
+  Future<void> _bookTrip(String tripId) async {
+    final User? user = _currentUser ?? FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('يرجى تسجيل الدخول للحجز.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    if (tripId.isEmpty || _bookingInProgress.contains(tripId)) {
+      return;
+    }
+
+    setState(() {
+      _bookingInProgress.add(tripId);
+    });
+
+    try {
+      await _bookingService.bookTrip(tripId: tripId, userId: user.uid);
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم تأكيد حجزك بنجاح ✅'),
+        ),
+      );
+    } on BookingException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر إكمال الحجز. حاول مرة أخرى لاحقًا.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _bookingInProgress.remove(tripId);
+      });
+    }
+  }
+
   void _showTripDetails(
     BuildContext context,
     Map<String, dynamic> data,
+    String tripId,
   ) {
+    final _SeatAvailability initialAvailability = _extractSeatAvailability(data);
+    final DocumentReference<Map<String, dynamic>>? tripRef = tripId.isEmpty
+        ? null
+        : FirebaseFirestore.instance.collection('trips').doc(tripId);
+
     final fromCity = (data['fromCity'] ?? data['from'] ?? '').toString();
     final toCity = (data['toCity'] ?? data['to'] ?? '').toString();
     final trimmedFromCity = fromCity.trim();
@@ -327,10 +421,61 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
           );
         }
 
-    return Directionality(
-      textDirection: baseDirection,
-      child: SingleChildScrollView(
-        padding: EdgeInsetsDirectional.only(
+        final bool isDriver =
+            _currentUser != null && driverId == _currentUser!.uid;
+        Widget seatSection;
+        if (tripRef == null) {
+          final bool isBooked = _currentUser != null &&
+              initialAvailability.bookedUsers.contains(_currentUser!.uid);
+          seatSection = _buildSeatInfoSection(
+            context: modalContext,
+            availability: initialAvailability,
+            isDriver: isDriver,
+            isBooked: isBooked,
+            requiresLogin: _currentUser == null,
+            isBooking: false,
+            onBook: null,
+          );
+        } else {
+          seatSection = StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: tripRef.snapshots(),
+            builder: (
+              BuildContext context,
+              AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot,
+            ) {
+              final Map<String, dynamic>? snapshotData = snapshot.data?.data();
+              final _SeatAvailability availability = snapshotData != null
+                  ? _extractSeatAvailability(snapshotData)
+                  : initialAvailability;
+              final bool isBooked = _currentUser != null &&
+                  availability.bookedUsers.contains(_currentUser!.uid);
+              final bool requiresLogin = _currentUser == null;
+              final bool isSoldOut = availability.availableSeats <= 0;
+              final bool canBook =
+                  !isDriver && !isBooked && !isSoldOut && !requiresLogin;
+
+              return _buildSeatInfoSection(
+                context: modalContext,
+                availability: availability,
+                isDriver: isDriver,
+                isBooked: isBooked,
+                requiresLogin: requiresLogin,
+                isBooking: _bookingInProgress.contains(tripId),
+                onBook: canBook
+                    ? () async {
+                        Navigator.of(modalContext).pop();
+                        await _bookTrip(tripId);
+                      }
+                    : null,
+              );
+            },
+          );
+        }
+
+        return Directionality(
+          textDirection: baseDirection,
+          child: SingleChildScrollView(
+            padding: EdgeInsetsDirectional.only(
           start: 24,
           end: 24,
           top: 16,
@@ -493,6 +638,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                     textDirection: baseDirection,
                   ),
                 ],
+                const SizedBox(height: 16),
+                seatSection,
                 const SizedBox(height: 24),
                 FilledButton.tonal(
                   onPressed: () => Navigator.of(modalContext).pop(),
@@ -798,29 +945,91 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
         ),
       );
     } else {
-      for (final data in _trips) {
-        final fromCity = (data['fromCity'] ?? '').toString().trim();
-        final toCity = (data['toCity'] ?? '').toString().trim();
-        final dateText = _formatDate(data['date']);
-        final priceText = _formatPrice(data['price']);
+      for (final Map<String, dynamic> data in _trips) {
+        final String fromCity = (data['fromCity'] ?? '').toString().trim();
+        final String toCity = (data['toCity'] ?? '').toString().trim();
+        final String dateText = _formatDate(data['date']);
+        final String priceText = _formatPrice(data['price']);
         final String driverId = _resolveDriverId(data) ?? '';
         final String driverName = _resolveDriverName(data);
+        final String tripId = (data['id'] ?? data['tripId'] ?? '').toString();
+        final _SeatAvailability initialAvailability = _extractSeatAvailability(data);
+        final bool isDriver =
+            _currentUser != null && driverId.isNotEmpty && driverId == _currentUser!.uid;
+
+        Widget cardContent;
+
+        if (tripId.isEmpty) {
+          final bool isBooked = _currentUser != null &&
+              initialAvailability.bookedUsers.contains(_currentUser!.uid);
+          final bool isSoldOut = initialAvailability.availableSeats <= 0;
+          cardContent = TripCard(
+            fromCity: fromCity.isEmpty ? 'غير متوفر' : fromCity,
+            toCity: toCity.isEmpty ? 'غير متوفر' : toCity,
+            date: dateText.isEmpty ? 'غير متوفر' : dateText,
+            price: priceText,
+            driverId: driverId,
+            driverName: driverName,
+            availableSeats: initialAvailability.availableSeats,
+            totalSeats: initialAvailability.totalSeats,
+            isBooked: isBooked,
+            isSoldOut: isSoldOut,
+            isOwnTrip: isDriver,
+            requiresLogin: _currentUser == null,
+            isBooking: false,
+            notes: (data['notes'] ?? '').toString().trim().isEmpty
+                ? null
+                : (data['notes'] ?? '').toString(),
+            onTap: () => _showTripDetails(context, data, tripId),
+            onBook: null,
+          );
+        } else {
+          cardContent = StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream:
+                FirebaseFirestore.instance.collection('trips').doc(tripId).snapshots(),
+            builder: (
+              BuildContext context,
+              AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot,
+            ) {
+              final Map<String, dynamic>? snapshotData = snapshot.data?.data();
+              final _SeatAvailability availability = snapshotData != null
+                  ? _extractSeatAvailability(snapshotData)
+                  : initialAvailability;
+              final bool isBooked = _currentUser != null &&
+                  availability.bookedUsers.contains(_currentUser!.uid);
+              final bool isSoldOut = availability.availableSeats <= 0;
+              final bool requiresLogin = _currentUser == null;
+              final bool canBook =
+                  !isDriver && !isBooked && !isSoldOut && !requiresLogin;
+
+              return TripCard(
+                fromCity: fromCity.isEmpty ? 'غير متوفر' : fromCity,
+                toCity: toCity.isEmpty ? 'غير متوفر' : toCity,
+                date: dateText.isEmpty ? 'غير متوفر' : dateText,
+                price: priceText,
+                driverId: driverId,
+                driverName: driverName,
+                availableSeats: availability.availableSeats,
+                totalSeats: availability.totalSeats,
+                isBooked: isBooked,
+                isSoldOut: isSoldOut,
+                isOwnTrip: isDriver,
+                requiresLogin: requiresLogin,
+                isBooking: _bookingInProgress.contains(tripId),
+                notes: (data['notes'] ?? '').toString().trim().isEmpty
+                    ? null
+                    : (data['notes'] ?? '').toString(),
+                onTap: () => _showTripDetails(context, data, tripId),
+                onBook: canBook ? () => _bookTrip(tripId) : null,
+              );
+            },
+          );
+        }
 
         children.add(
           Padding(
             padding: const EdgeInsets.only(bottom: 16),
-            child: TripCard(
-              fromCity: fromCity.isEmpty ? 'غير متوفر' : fromCity,
-              toCity: toCity.isEmpty ? 'غير متوفر' : toCity,
-              date: dateText.isEmpty ? 'غير متوفر' : dateText,
-              price: priceText,
-              driverId: driverId,
-              driverName: driverName,
-              notes: (data['notes'] ?? '').toString().trim().isEmpty
-                  ? null
-                  : (data['notes'] ?? '').toString(),
-              onTap: () => _showTripDetails(context, data),
-            ),
+            child: cardContent,
           ),
         );
       }
@@ -860,6 +1069,162 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       return null;
     }
     return text;
+  }
+
+  int _parseSeatCount(dynamic value) {
+    if (value is int) {
+      return value < 0 ? 0 : value;
+    }
+    if (value is num) {
+      final int parsed = value.toInt();
+      return parsed < 0 ? 0 : parsed;
+    }
+    final int? parsed = int.tryParse(value?.toString() ?? '');
+    if (parsed == null || parsed < 0) {
+      return 0;
+    }
+    return parsed;
+  }
+
+  List<String> _parseBookedUsers(dynamic value) {
+    if (value is List) {
+      return value
+          .map((dynamic item) => item?.toString() ?? '')
+          .map((String userId) => userId.trim())
+          .where((String userId) => userId.isNotEmpty)
+          .toList(growable: false);
+    }
+    return <String>[];
+  }
+
+  _SeatAvailability _extractSeatAvailability(Map<String, dynamic>? data) {
+    if (data == null) {
+      return const _SeatAvailability(
+        totalSeats: 0,
+        availableSeats: 0,
+        bookedUsers: <String>[],
+      );
+    }
+
+    final List<String> bookedUsers = _parseBookedUsers(data['bookedUsers']);
+    final int availableSeats = _parseSeatCount(data['availableSeats']);
+    final int totalSeats = _parseSeatCount(data['totalSeats']);
+    final int computedTotal = totalSeats > 0
+        ? totalSeats
+        : bookedUsers.length + availableSeats;
+    final int ensuredTotal = computedTotal < bookedUsers.length
+        ? bookedUsers.length
+        : computedTotal;
+    final int remainingCapacity = ensuredTotal - bookedUsers.length;
+    final int sanitizedAvailable = availableSeats > remainingCapacity
+        ? remainingCapacity
+        : availableSeats;
+
+    return _SeatAvailability(
+      totalSeats: ensuredTotal,
+      availableSeats: sanitizedAvailable < 0 ? 0 : sanitizedAvailable,
+      bookedUsers: bookedUsers,
+    );
+  }
+
+  Widget _buildSeatInfoSection({
+    required BuildContext context,
+    required _SeatAvailability availability,
+    required bool isDriver,
+    required bool isBooked,
+    required bool requiresLogin,
+    required bool isBooking,
+    required VoidCallback? onBook,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    final TextDirection direction = Directionality.of(context);
+    final bool isRtl = direction == TextDirection.rtl;
+    final bool isSoldOut = availability.availableSeats <= 0;
+    final bool bookingUnavailable =
+        onBook == null && !isDriver && !isBooked && !requiresLogin && !isSoldOut;
+
+    Widget action;
+
+    if (isDriver) {
+      action = _StatusBadge(
+        color: Colors.orange.shade700,
+        icon: Icons.directions_car_filled,
+        text: 'هذه رحلتك',
+      );
+    } else if (isBooked) {
+      action = _StatusBadge(
+        color: Colors.green.shade700,
+        icon: Icons.check_circle_outline,
+        text: 'تم تأكيد حجزك',
+      );
+    } else if (isSoldOut) {
+      action = _StatusBadge(
+        color: Colors.red.shade600,
+        icon: Icons.block,
+        text: 'اكتمل الحجز',
+      );
+    } else if (requiresLogin) {
+      action = _StatusBadge(
+        color: colorScheme.primary,
+        icon: Icons.lock_outline,
+        text: 'سجّل الدخول للحجز',
+      );
+    } else if (bookingUnavailable) {
+      action = _StatusBadge(
+        color: colorScheme.onSurface.withOpacity(0.7),
+        icon: Icons.info_outline,
+        text: 'الحجز غير متاح لهذه الرحلة',
+      );
+    } else {
+      action = FilledButton.icon(
+        onPressed: isBooking ? null : onBook,
+        icon: isBooking
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.event_seat),
+        label: Text(isBooking ? 'جاري الحجز...' : 'احجز الآن'),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Row(
+          textDirection: direction,
+          children: <Widget>[
+            Icon(
+              Icons.event_seat,
+              color: colorScheme.primary,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                availability.totalSeats > 0
+                    ? 'المقاعد المتاحة: ${availability.availableSeats} / ${availability.totalSeats}'
+                    : 'المقاعد المتاحة: ${availability.availableSeats}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: isRtl ? TextAlign.right : TextAlign.left,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment:
+              isRtl ? Alignment.centerRight : Alignment.centerLeft,
+          child: action,
+        ),
+      ],
+    );
   }
 
   String? _resolveDriverId(Map<String, dynamic> data) {
@@ -982,8 +1347,16 @@ class TripCard extends StatelessWidget {
     required this.price,
     required this.driverId,
     required this.driverName,
+    required this.availableSeats,
+    required this.totalSeats,
+    required this.isBooked,
+    required this.isSoldOut,
+    required this.isOwnTrip,
+    required this.requiresLogin,
+    required this.isBooking,
     this.notes,
     this.onTap,
+    this.onBook,
   });
 
   final String fromCity;
@@ -992,13 +1365,22 @@ class TripCard extends StatelessWidget {
   final String price;
   final String driverId;
   final String driverName;
+  final int availableSeats;
+  final int totalSeats;
+  final bool isBooked;
+  final bool isSoldOut;
+  final bool isOwnTrip;
+  final bool requiresLogin;
+  final bool isBooking;
   final String? notes;
   final VoidCallback? onTap;
+  final VoidCallback? onBook;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    final TextTheme textTheme = theme.textTheme;
     final TextDirection textDirection = Directionality.of(context);
     final bool isRtl = textDirection == TextDirection.rtl;
 
@@ -1040,8 +1422,7 @@ class TripCard extends StatelessWidget {
     if (hasDriverInfo) {
       columnChildren.addAll([
         Align(
-          alignment:
-              isRtl ? Alignment.topRight : Alignment.topLeft,
+          alignment: isRtl ? Alignment.topRight : Alignment.topLeft,
           child: Column(
             crossAxisAlignment:
                 isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -1152,6 +1533,30 @@ class TripCard extends StatelessWidget {
           ],
         ),
       ),
+      const SizedBox(height: 16),
+      Row(
+        textDirection: textDirection,
+        children: [
+          Icon(
+            Icons.event_seat,
+            color: colorScheme.primary,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              totalSeats > 0
+                  ? 'المقاعد المتاحة: $availableSeats / $totalSeats'
+                  : 'المقاعد المتاحة: $availableSeats',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: isRtl ? TextAlign.right : TextAlign.left,
+            ),
+          ),
+        ],
+      ),
     ]);
 
     if (notes != null && notes!.trim().isNotEmpty) {
@@ -1164,6 +1569,18 @@ class TripCard extends StatelessWidget {
         ),
       ]);
     }
+
+    columnChildren.add(const SizedBox(height: 16));
+
+    final AlignmentDirectional actionAlignment =
+        isRtl ? AlignmentDirectional.centerEnd : AlignmentDirectional.centerStart;
+
+    columnChildren.add(
+      Align(
+        alignment: actionAlignment,
+        child: _buildBookingAction(context),
+      ),
+    );
 
     return Directionality(
       textDirection: textDirection,
@@ -1191,4 +1608,104 @@ class TripCard extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildBookingAction(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+
+    if (isOwnTrip) {
+      return _StatusBadge(
+        color: Colors.orange.shade700,
+        icon: Icons.directions_car_filled,
+        text: 'هذه رحلتك',
+      );
+    }
+
+    if (isBooked) {
+      return _StatusBadge(
+        color: Colors.green.shade700,
+        icon: Icons.check_circle_outline,
+        text: 'تم تأكيد حجزك',
+      );
+    }
+
+    if (isSoldOut) {
+      return _StatusBadge(
+        color: Colors.red.shade600,
+        icon: Icons.block,
+        text: 'اكتمل الحجز',
+      );
+    }
+
+    if (requiresLogin) {
+      return _StatusBadge(
+        color: colorScheme.primary,
+        icon: Icons.lock_outline,
+        text: 'سجّل الدخول للحجز',
+      );
+    }
+
+    return FilledButton.icon(
+      onPressed: isBooking ? null : onBook,
+      icon: isBooking
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.event_seat),
+      label: Text(isBooking ? 'جاري الحجز...' : 'احجز الآن'),
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({
+    required this.color,
+    required this.text,
+    required this.icon,
+  });
+
+  final Color color;
+  final String text;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SeatAvailability {
+  const _SeatAvailability({
+    required this.totalSeats,
+    required this.availableSeats,
+    required this.bookedUsers,
+  });
+
+  final int totalSeats;
+  final int availableSeats;
+  final List<String> bookedUsers;
 }

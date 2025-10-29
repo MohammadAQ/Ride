@@ -14,6 +14,9 @@ class Trip {
     required this.carColor,
     required this.phoneNumber,
     this.notes,
+    required this.totalSeats,
+    required this.availableSeats,
+    required this.bookedUsers,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -30,11 +33,47 @@ class Trip {
   final String carColor;
   final String phoneNumber;
   final String? notes;
+  final int totalSeats;
+  final int availableSeats;
+  final List<String> bookedUsers;
   final DateTime createdAt;
   final DateTime updatedAt;
 
   factory Trip.fromJson(Map<String, dynamic> json) {
-    return Trip({
+    List<String> parseBookedUsers(dynamic value) {
+      if (value is List) {
+        return value
+            .map((dynamic item) => item?.toString())
+            .whereType<String>()
+            .map((String userId) => userId.trim())
+            .where((String userId) => userId.isNotEmpty)
+            .toList(growable: false);
+      }
+      return <String>[];
+    }
+
+    int parseInt(dynamic value, [int defaultValue = 0]) {
+      if (value is int) {
+        return value;
+      }
+      if (value is num) {
+        return value.toInt();
+      }
+      final int? parsed = int.tryParse(value?.toString() ?? '');
+      return parsed ?? defaultValue;
+    }
+
+    final List<String> bookedUsers = parseBookedUsers(json['bookedUsers']);
+    final int availableSeats = parseInt(json['availableSeats'], 0);
+    final int totalSeats = () {
+      final int parsedTotal = parseInt(json['totalSeats'], 0);
+      if (parsedTotal > 0) {
+        return parsedTotal;
+      }
+      return bookedUsers.length + availableSeats;
+    }();
+
+    return Trip(
       id: json['id']?.toString() ?? '',
       driverId: json['driverId']?.toString() ?? '',
       driverName: UserProfile.sanitizeDisplayName(json['driverName']),
@@ -47,9 +86,12 @@ class Trip {
       carColor: json['carColor']?.toString() ?? '',
       phoneNumber: json['phoneNumber']?.toString() ?? '',
       notes: json['notes']?.toString(),
+      totalSeats: totalSeats,
+      availableSeats: availableSeats,
+      bookedUsers: bookedUsers,
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
       updatedAt: DateTime.tryParse(json['updatedAt']?.toString() ?? '') ?? DateTime.now(),
-    });
+    );
   }
 
   Map<String, dynamic> toJson() {
@@ -66,6 +108,9 @@ class Trip {
       'carColor': carColor,
       'phoneNumber': phoneNumber,
       if (notes != null) 'notes': notes,
+      'totalSeats': totalSeats,
+      'availableSeats': availableSeats,
+      'bookedUsers': bookedUsers,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
