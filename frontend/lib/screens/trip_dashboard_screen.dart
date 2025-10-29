@@ -151,13 +151,29 @@ class TripDashboardScreen extends StatelessWidget {
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _passengerStream(String tripId) {
-    return FirebaseFirestore.instance
-        .collection('bookings')
-        .where('tripId', isEqualTo: tripId)
+    final FirebaseFirestore firestore = FirebaseFirestore.instance;
+    final DocumentReference<Map<String, dynamic>> tripRef =
+        firestore.collection('trips').doc(tripId);
+
+    Query<Map<String, dynamic>> query = firestore.collection('bookings').where(
+          // Older bookings stored a DocumentReference while newer ones store the
+          // plain string tripId. Use an OR filter so both versions match.
+          Filter.or(
+            Filter('tripId', isEqualTo: tripId),
+            Filter('tripRef', isEqualTo: tripRef),
+          ),
+        );
+
+    query = query
+        // Exclude canceled bookings before they reach the UI so we only show
+        // active passengers in the dashboard.
         .where('status', isNotEqualTo: 'canceled')
         .orderBy('status')
-        .orderBy('createdAt', descending: true)
-        .snapshots();
+        // Order by updatedAt/bookedAt which are guaranteed to exist after the
+        // booking creation fix above.
+        .orderBy('updatedAt', descending: true);
+
+    return query.snapshots();
   }
 }
 
