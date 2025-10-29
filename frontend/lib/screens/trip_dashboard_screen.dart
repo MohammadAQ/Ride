@@ -2,6 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:carpal_app/models/user_profile.dart';
+import 'package:carpal_app/services/user_profile_cache.dart';
+
 import '../services/phone_launcher.dart';
 
 class TripDashboardArguments {
@@ -132,32 +135,74 @@ class TripDashboardScreen extends StatelessWidget {
                         snapshot.data?.docs ??
                             <QueryDocumentSnapshot<Map<String, dynamic>>>[];
 
-                    final List<_PassengerBooking> passengers = docs
-                        .map((QueryDocumentSnapshot<Map<String, dynamic>> doc) {
-                      final Map<String, dynamic> data = doc.data();
-                      return _PassengerBooking.fromMap(data);
-                    }).where((_PassengerBooking booking) {
-                      return !booking.isCanceled;
-                    }).toList();
-
-                    if (passengers.isEmpty) {
+                    if (docs.isEmpty) {
                       return _CenteredMessage(
-                        message: '🚫 ' +
+                        message: '🚫 '
+                            +
                             (isRtl
                                 ? 'لا يوجد ركّاب في هذه الرحلة بعد'
                                 : 'No passengers booked yet'),
                       );
                     }
 
-                    return ListView.separated(
-                      padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 24),
-                      itemCount: passengers.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (BuildContext context, int index) {
-                        final _PassengerBooking booking = passengers[index];
-                        return _PassengerCard(
-                          booking: booking,
-                          textDirection: textDirection,
+                    final Future<List<_PassengerBooking>> enrichedBookings =
+                        _toPassengerBookings(docs);
+
+                    return FutureBuilder<List<_PassengerBooking>>(
+                      future: enrichedBookings,
+                      builder: (
+                        BuildContext context,
+                        AsyncSnapshot<List<_PassengerBooking>> bookingsSnapshot,
+                      ) {
+                        if (bookingsSnapshot.hasError) {
+                          if (kDebugMode) {
+                            debugPrint(
+                              'Failed to enrich passenger names: ${bookingsSnapshot.error}',
+                            );
+                          }
+                          final String message = isRtl
+                              ? 'حدث خطأ أثناء تحميل بيانات الركاب.'
+                              : 'Failed to load passenger details.';
+                          return _CenteredMessage(message: message);
+                        }
+
+                        if (bookingsSnapshot.connectionState ==
+                                ConnectionState.waiting &&
+                            !bookingsSnapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+
+                        final List<_PassengerBooking> passengers =
+                            bookingsSnapshot.data ?? <_PassengerBooking>[];
+                        final List<_PassengerBooking> visiblePassengers = passengers
+                            .where((_PassengerBooking booking) => !booking.isCanceled)
+                            .toList();
+
+                        if (visiblePassengers.isEmpty) {
+                          return _CenteredMessage(
+                            message: '🚫 '
+                                +
+                                (isRtl
+                                    ? 'لا يوجد ركّاب في هذه الرحلة بعد'
+                                    : 'No passengers booked yet'),
+                          );
+                        }
+
+                        return ListView.separated(
+                          padding:
+                              const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 24),
+                          itemCount: visiblePassengers.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          itemBuilder: (BuildContext context, int index) {
+                            final _PassengerBooking booking =
+                                visiblePassengers[index];
+                            return _PassengerCard(
+                              booking: booking,
+                              textDirection: textDirection,
+                            );
+                          },
                         );
                       },
                     );
@@ -233,6 +278,69 @@ class TripDashboardScreen extends StatelessWidget {
         stackTrace,
       );
     }
+  }
+
+  Future<List<_PassengerBooking>> _toPassengerBookings(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) async {
+    final List<_PassengerBooking> bookings = docs
+        .map((QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+      final Map<String, dynamic> data = doc.data();
+      return _PassengerBooking.fromMap(data);
+    }).toList(growable: false);
+
+    final Set<String> missingNameIds = bookings
+        .where((_PassengerBooking booking) {
+          return booking.passengerName.isEmpty && booking.passengerId.isNotEmpty;
+        })
+        .map((_PassengerBooking booking) => booking.passengerId)
+        .toSet();
+
+    if (missingNameIds.isEmpty) {
+      return bookings;
+    }
+
+    // Load display names for historical bookings that only stored the
+    // passengerId. This keeps the dashboard accurate even after users update
+    // their profile names.
+    final Map<String, String> resolvedNames =
+        await _fetchPassengerNames(missingNameIds);
+
+    return bookings.map((_PassengerBooking booking) {
+      if (booking.passengerName.isNotEmpty) {
+        return booking;
+      }
+
+      final String? resolvedName = resolvedNames[booking.passengerId];
+      if (resolvedName == null || resolvedName.trim().isEmpty) {
+        return booking;
+      }
+
+      return booking.copyWith(passengerName: resolvedName.trim());
+    }).toList(growable: false);
+  }
+
+  Future<Map<String, String>> _fetchPassengerNames(Set<String> userIds) async {
+    final Map<String, String> resolved = <String, String>{};
+    if (userIds.isEmpty) {
+      return resolved;
+    }
+
+    final List<Future<void>> futures = userIds.map((String userId) async {
+      try {
+        final UserProfile? profile = await UserProfileCache.fetch(userId);
+        if (profile != null) {
+          resolved[userId] = profile.displayName;
+        }
+      } catch (error, stackTrace) {
+        if (kDebugMode) {
+          debugPrint('Failed to fetch profile for $userId: $error\n$stackTrace');
+        }
+      }
+    }).toList();
+
+    await Future.wait(futures);
+    return resolved;
   }
 }
 
@@ -684,6 +792,7 @@ class _PassengerAvatar extends StatelessWidget {
 
 class _PassengerBooking {
   _PassengerBooking({
+    required this.passengerId,
     required this.passengerName,
     required this.phoneNumber,
     required this.status,
@@ -691,6 +800,7 @@ class _PassengerBooking {
     required this.photoUrl,
   });
 
+  final String passengerId;
   final String passengerName;
   final String phoneNumber;
   final String status;
@@ -701,6 +811,9 @@ class _PassengerBooking {
 
   static _PassengerBooking fromMap(Map<String, dynamic> data) {
     return _PassengerBooking(
+      passengerId: _stringOrEmpty(data['passengerId']) ??
+          _stringOrEmpty(data['userId']) ??
+          '',
       passengerName: _stringOrEmpty(data['passengerName']) ??
           _stringOrEmpty(data['name']) ??
           '',
@@ -716,6 +829,23 @@ class _PassengerBooking {
                 data['avatar'],
           ) ??
           null,
+    );
+  }
+
+  _PassengerBooking copyWith({
+    String? passengerName,
+    String? phoneNumber,
+    String? status,
+    DateTime? createdAt,
+    String? photoUrl,
+  }) {
+    return _PassengerBooking(
+      passengerId: passengerId,
+      passengerName: passengerName ?? this.passengerName,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      photoUrl: photoUrl ?? this.photoUrl,
     );
   }
 

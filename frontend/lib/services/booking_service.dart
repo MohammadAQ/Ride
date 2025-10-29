@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:carpal_app/models/user_profile.dart';
+
 class BookingException implements Exception {
   BookingException(this.code, this.message);
 
@@ -29,6 +31,12 @@ class BookingService {
         _firestore.collection('trips').doc(tripId);
     final DocumentReference<Map<String, dynamic>> bookingRef =
         _firestore.collection('bookings').doc('${tripId}_$userId');
+
+    // Resolve the passenger name before entering the transaction so the value
+    // is ready when we write the booking document. This guarantees the driver
+    // dashboard always has a passengerName field to display instead of showing
+    // "راكب غير معروف" for new bookings.
+    final String passengerName = await _resolvePassengerName(userId);
 
     try {
       await _firestore.runTransaction((Transaction transaction) async {
@@ -123,6 +131,10 @@ class BookingService {
             'tripRef': tripRef,
             'driverId': driverId,
             'userId': userId,
+            'passengerId': userId,
+            // Persist the resolved passenger name so the dashboard has an
+            // immediate value even if the profile cache misses later on.
+            'passengerName': passengerName,
             'status': 'confirmed',
             'bookedAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
@@ -131,6 +143,7 @@ class BookingService {
         } else {
           transaction.set(bookingRef, <String, dynamic>{
             'userId': userId,
+            'passengerId': userId,
             // Store the plain string tripId for backwards compatibility with
             // existing queries and analytics.
             'tripId': tripId,
@@ -139,6 +152,10 @@ class BookingService {
             // reference.
             'tripRef': tripRef,
             'driverId': driverId,
+            // Persist the resolved passenger name so it is always available to
+            // the trip dashboard, even if the user later changes their
+            // profile.
+            'passengerName': passengerName,
             'status': 'confirmed',
             'bookedAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
@@ -263,5 +280,38 @@ class BookingService {
       return '';
     }
     return value.toString().trim();
+  }
+
+  Future<String> _resolvePassengerName(String userId) async {
+    final String trimmedId = userId.trim();
+    if (trimmedId.isEmpty) {
+      return 'مستخدم';
+    }
+
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await _firestore
+          .collection('users')
+          .doc(trimmedId)
+          .get();
+
+      if (snapshot.exists) {
+        final Map<String, dynamic> data = snapshot.data() ?? <String, dynamic>{};
+        final UserProfile profile =
+            UserProfile.fromFirestore(snapshot.id, data);
+        if (profile.displayName.isNotEmpty && profile.displayName != 'مستخدم') {
+          return profile.displayName;
+        }
+      }
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint(
+          'Failed to resolve passenger name for $trimmedId: $error\n$stackTrace',
+        );
+      }
+    }
+
+    // Returning the generic label keeps the booking write resilient so the
+    // transaction still succeeds even if the profile lookup fails.
+    return 'مستخدم';
   }
 }
