@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -50,6 +51,18 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
   void initState() {
     super.initState();
     unawaited(_fetchTrips(reset: true));
+  }
+
+  TextDirection _effectiveTextDirection(BuildContext context) {
+    final Locale? locale = Localizations.maybeLocaleOf(context);
+    if (locale == null) {
+      return Directionality.of(context);
+    }
+
+    final String languageCode = locale.languageCode.toLowerCase();
+    return Bidi.isRtlLanguage(languageCode)
+        ? TextDirection.rtl
+        : TextDirection.ltr;
   }
 
   Future<void> _fetchTrips({required bool reset}) async {
@@ -130,7 +143,11 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     final displayFromCity =
         trimmedFromCity.isEmpty ? 'غير متوفر' : trimmedFromCity;
     final displayToCity = trimmedToCity.isEmpty ? 'غير متوفر' : trimmedToCity;
-    final routeText = 'من: $displayFromCity → إلى: $displayToCity';
+    final TextDirection baseDirection = _effectiveTextDirection(context);
+    final bool isRtl = baseDirection == TextDirection.rtl;
+    final routeText = isRtl
+        ? 'من: $displayFromCity → إلى: $displayToCity'
+        : 'From: $displayFromCity → To: $displayToCity';
     final dateText = _formatDate(data['date']);
     final timeText = (data['time'] ?? '').toString();
     final priceText = _formatPrice(data['price']);
@@ -223,27 +240,36 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
           required Widget leading,
           required String label,
           required String value,
+          required TextDirection textDirection,
           bool isLink = false,
           VoidCallback? onTap,
         }) {
           final displayValue = value.trim().isEmpty ? 'غير متوفر' : value.trim();
+          final bool isRtl = textDirection == TextDirection.rtl;
           final rowContent = Row(
+            textDirection: textDirection,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               leading,
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment:
+                      isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(label, style: labelStyle),
+                    Text(
+                      label,
+                      style: labelStyle,
+                      textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       displayValue,
                       style: isLink
                           ? valueStyle?.copyWith(color: colorScheme.secondary)
                           : valueStyle,
+                      textAlign: isRtl ? TextAlign.right : TextAlign.left,
                     ),
                   ],
                 ),
@@ -277,18 +303,18 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
           );
         }
 
-        return Directionality(
-          textDirection: TextDirection.rtl,
-          child: SingleChildScrollView(
-            padding: EdgeInsets.only(
-              left: 24,
-              right: 24,
-              top: 16,
-              bottom: 16 + bottomPadding,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+    return Directionality(
+      textDirection: baseDirection,
+      child: SingleChildScrollView(
+        padding: EdgeInsetsDirectional.only(
+          start: 24,
+          end: 24,
+          top: 16,
+          bottom: 16 + bottomPadding,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
                 Center(
                   child: Container(
                     width: 40,
@@ -303,6 +329,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(
+                    textDirection: baseDirection,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Icon(
@@ -317,6 +344,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                             fontWeight: FontWeight.w600,
                             color: colorScheme.onSurface,
                           ),
+                          textAlign: isRtl ? TextAlign.right : TextAlign.left,
                         ),
                       ),
                     ],
@@ -330,6 +358,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                   ),
                   label: 'التاريخ',
                   value: dateText,
+                  textDirection: baseDirection,
                 ),
                 const SizedBox(height: 16),
                 buildDetailRow(
@@ -339,6 +368,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                   ),
                   label: 'الوقت',
                   value: timeText,
+                  textDirection: baseDirection,
                 ),
                 const SizedBox(height: 16),
                 buildDetailRow(
@@ -348,13 +378,15 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                   ),
                   label: 'السعر',
                   value: priceText,
+                  textDirection: baseDirection,
                 ),
                 const SizedBox(height: 16),
                 Directionality(
-                  textDirection: TextDirection.rtl,
+                  textDirection: baseDirection,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(
+                      textDirection: baseDirection,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
@@ -364,15 +396,23 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                            crossAxisAlignment: isRtl
+                                ? CrossAxisAlignment.end
+                                : CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text('السائق', style: labelStyle),
+                              Text(
+                                'السائق',
+                                style: labelStyle,
+                                textAlign:
+                                    isRtl ? TextAlign.right : TextAlign.left,
+                              ),
                               const SizedBox(height: 8),
                               UserProfilePreview(
                                 userId: driverId,
                                 fallbackName: driverName,
                                 avatarRadius: 26,
+                                textDirection: baseDirection,
                                 textStyle: theme.textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w600,
                                   color: colorScheme.onSurface,
@@ -393,6 +433,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                   ),
                   label: 'موديل السيارة',
                   value: carModel,
+                  textDirection: baseDirection,
                 ),
                 const SizedBox(height: 16),
                 buildDetailRow(
@@ -402,6 +443,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                   ),
                   label: 'لون السيارة',
                   value: carColor,
+                  textDirection: baseDirection,
                 ),
                 const SizedBox(height: 16),
                 buildDetailRow(
@@ -413,6 +455,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                   value: phoneNumber,
                   isLink: true,
                   onTap: launchCall,
+                  textDirection: baseDirection,
                 ),
                 if (notes != null && notes.isNotEmpty) ...[
                   const SizedBox(height: 16),
@@ -423,6 +466,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                     ),
                     label: 'ملاحظات',
                     value: notes,
+                    textDirection: baseDirection,
                   ),
                 ],
                 const SizedBox(height: 24),
@@ -630,9 +674,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     ];
 
     final TextDirection effectiveDirection =
-        Directionality.of(context) == TextDirection.rtl
-            ? TextDirection.rtl
-            : TextDirection.ltr;
+        _effectiveTextDirection(context);
+    final bool isRtl = effectiveDirection == TextDirection.rtl;
 
     final body = Container(
       decoration: BoxDecoration(
@@ -657,11 +700,12 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
               leading:
                   Navigator.of(context).canPop() ? const BackButton() : null,
               titleSpacing: 0,
-              title: const Align(
-                alignment: Alignment.centerRight,
+              title: Align(
+                alignment:
+                    isRtl ? Alignment.centerRight : Alignment.centerLeft,
                 child: Text(
                   'البحث عن الرحلات',
-                  textAlign: TextAlign.right,
+                  textAlign: isRtl ? TextAlign.right : TextAlign.left,
                 ),
               ),
               centerTitle: false,
@@ -931,7 +975,8 @@ class TripCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    const TextDirection textDirection = TextDirection.rtl;
+    final TextDirection textDirection = Directionality.of(context);
+    final bool isRtl = textDirection == TextDirection.rtl;
 
     final Color dividerColor = colorScheme.onSurface.withOpacity(0.08);
     final TextStyle driverLabelStyle = textTheme.labelLarge?.copyWith(
@@ -971,15 +1016,17 @@ class TripCard extends StatelessWidget {
     if (hasDriverInfo) {
       columnChildren.addAll([
         Align(
-          alignment: Alignment.topRight,
+          alignment:
+              isRtl ? Alignment.topRight : Alignment.topLeft,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment:
+                isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 'السائق',
                 style: driverLabelStyle,
-                textAlign: TextAlign.right,
+                textAlign: isRtl ? TextAlign.right : TextAlign.left,
               ),
               const SizedBox(height: 6),
               UserProfilePreview(
@@ -1019,10 +1066,12 @@ class TripCard extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'من $fromCity → إلى $toCity',
+              isRtl
+                  ? 'من $fromCity → إلى $toCity'
+                  : 'From $fromCity → To $toCity',
               style: routeTextStyle,
               overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
+              textAlign: isRtl ? TextAlign.right : TextAlign.left,
             ),
           ),
         ],
@@ -1034,7 +1083,7 @@ class TripCard extends StatelessWidget {
       ),
       const SizedBox(height: 16),
       Align(
-        alignment: Alignment.centerRight,
+        alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           textDirection: textDirection,
@@ -1050,7 +1099,7 @@ class TripCard extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                     color: colorScheme.primary,
                   ),
-              textAlign: TextAlign.right,
+              textAlign: isRtl ? TextAlign.right : TextAlign.left,
             ),
             const SizedBox(width: 18),
             Row(
@@ -1072,7 +1121,7 @@ class TripCard extends StatelessWidget {
                       TextStyle(
                         color: colorScheme.onSurface.withOpacity(0.8),
                       ),
-                  textAlign: TextAlign.right,
+                  textAlign: isRtl ? TextAlign.right : TextAlign.left,
                 ),
               ],
             ),
@@ -1087,7 +1136,7 @@ class TripCard extends StatelessWidget {
         Text(
           notes!,
           style: notesStyle,
-          textAlign: TextAlign.right,
+          textAlign: isRtl ? TextAlign.right : TextAlign.left,
         ),
       ]);
     }
@@ -1108,7 +1157,8 @@ class TripCard extends StatelessWidget {
             padding:
                 const EdgeInsetsDirectional.symmetric(horizontal: 22, vertical: 18),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment:
+                  isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: columnChildren,
             ),
