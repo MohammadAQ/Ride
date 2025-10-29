@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
 
 import 'package:carpal_app/models/user_profile.dart';
 import 'package:carpal_app/widgets/user_profile_preview.dart';
@@ -12,6 +11,30 @@ import '../services/api_service.dart';
 
 const MethodChannel _phoneLauncherChannel =
     MethodChannel('com.example.carpal_app/phone_launcher');
+
+const Set<String> _rtlLanguageCodes = <String>{
+  'ar', // Arabic
+  'fa', // Persian
+  'he', // Hebrew
+  'ps', // Pashto
+  'ur', // Urdu
+  'ug', // Uyghur
+  'dv', // Divehi
+  'ku', // Kurdish
+  'sd', // Sindhi
+  'syr', // Syriac
+  'yi', // Yiddish
+};
+
+bool _isRtlLanguage(String languageCode) {
+  if (languageCode.isEmpty) {
+    return false;
+  }
+
+  final String normalized = languageCode.toLowerCase();
+  final String baseCode = normalized.split(RegExp('[-_]')).first;
+  return _rtlLanguageCodes.contains(baseCode);
+}
 
 const List<String> westBankCities = [
   'رام الله',
@@ -60,8 +83,8 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       return Directionality.of(context);
     }
 
-    final String languageCode = locale.languageCode.toLowerCase();
-    return Bidi.isRtlLanguage(languageCode)
+    final String languageCode = locale.toLanguageTag();
+    return _isRtlLanguage(languageCode)
         ? TextDirection.rtl
         : TextDirection.ltr;
   }
