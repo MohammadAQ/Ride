@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../services/phone_launcher.dart';
@@ -96,11 +97,15 @@ class TripDashboardScreen extends StatelessWidget {
                     AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot,
                   ) {
                     if (snapshot.hasError) {
-                      return _CenteredMessage(
-                        message: isRtl
-                            ? 'حدث خطأ أثناء تحميل الركاب. حاول مرة أخرى لاحقًا.'
-                            : 'Failed to load passengers. Please try again later.',
-                      );
+                      final Object? error = snapshot.error;
+                      final String fallback = isRtl
+                          ? 'حدث خطأ أثناء تحميل الركاب. حاول مرة أخرى لاحقًا.'
+                          : 'Failed to load passengers. Please try again later.';
+                      final String message =
+                          error is FirebaseException && error.message != null
+                              ? error.message!
+                              : fallback;
+                      return _CenteredMessage(message: message);
                     }
 
                     if (snapshot.connectionState == ConnectionState.waiting) {
@@ -150,30 +155,47 @@ class TripDashboardScreen extends StatelessWidget {
     );
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _passengerStream(String tripId) {
+  Stream<QuerySnapshot<Map<String, dynamic>>> _passengerStream(String tripId) async* {
     final FirebaseFirestore firestore = FirebaseFirestore.instance;
     final DocumentReference<Map<String, dynamic>> tripRef =
         firestore.collection('trips').doc(tripId);
 
-    Query<Map<String, dynamic>> query = firestore.collection('bookings').where(
-          // Older bookings stored a DocumentReference while newer ones store the
-          // plain string tripId. Use an OR filter so both versions match.
-          Filter.or(
-            Filter('tripId', isEqualTo: tripId),
-            Filter('tripRef', isEqualTo: tripRef),
-          ),
-        );
+    try {
+      final Query<Map<String, dynamic>> query = firestore
+          .collection('bookings')
+          .where(
+            // Firestore throws when filtering with the wrong value type (String
+            // vs DocumentReference). Matching both fields keeps old data
+            // compatible and fixes the dashboard crash.
+            Filter.or(
+              Filter('tripId', isEqualTo: tripId),
+              Filter('tripRef', isEqualTo: tripRef),
+            ),
+          )
+          // Keep most recent status changes at the top of the dashboard.
+          .orderBy('updatedAt', descending: true);
 
-    query = query
-        // Exclude canceled bookings before they reach the UI so we only show
-        // active passengers in the dashboard.
-        .where('status', isNotEqualTo: 'canceled')
-        .orderBy('status')
-        // Order by updatedAt/bookedAt which are guaranteed to exist after the
-        // booking creation fix above.
-        .orderBy('updatedAt', descending: true);
-
-    return query.snapshots();
+      yield* query.snapshots();
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('Failed to load passengers for trip $tripId: ${error.message}');
+      // Surface a readable message to the StreamBuilder so the UI can present
+      // something friendlier than the default Firebase error text.
+      Error.throwWithStackTrace(
+        FirebaseException(
+          plugin: error.plugin,
+          code: error.code,
+          message:
+              'حدث خطأ أثناء تحميل الركاب. حاول مرة أخرى لاحقًا. (${error.code})',
+        ),
+        stackTrace,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Unexpected passengers stream error: $error');
+      Error.throwWithStackTrace(
+        Exception('حدث خطأ غير متوقع أثناء تحميل الركاب. ($error)'),
+        stackTrace,
+      );
+    }
   }
 }
 
