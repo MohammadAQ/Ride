@@ -474,3 +474,38 @@ export const sendTestNotification = functions
       throw new functions.https.HttpsError('internal', 'Failed to send test notification.');
     }
   });
+
+// When a profile is removed, release the reserved phone number document so the
+// number becomes available for future sign-ups.
+export const onUserDocumentDeleted = functions
+  .runWith(runtimeOptions)
+  .firestore.document('users/{userId}')
+  .onDelete(async (snapshot, context) => {
+    const data = snapshot.data() ?? {};
+    const phoneNumber = stringFrom(
+      data.phoneNumber ?? data.phone ?? '',
+      '',
+    ).trim();
+
+    if (!phoneNumber) {
+      functions.logger.info('User deleted without phone number; skipping cleanup.', {
+        userId: context.params.userId,
+      });
+      return;
+    }
+
+    const phoneDocRef = db.collection('phoneNumbers').doc(phoneNumber);
+
+    try {
+      await phoneDocRef.delete();
+      functions.logger.info('Removed phoneNumbers entry for deleted user.', {
+        userId: context.params.userId,
+        phoneNumber,
+      });
+    } catch (error) {
+      functions.logger.error('Failed to remove phoneNumbers entry for deleted user.', error, {
+        userId: context.params.userId,
+        phoneNumber,
+      });
+    }
+  });

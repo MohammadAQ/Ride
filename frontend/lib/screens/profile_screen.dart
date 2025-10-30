@@ -627,27 +627,77 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           final String? sanitizedPhone =
                               UserProfile.sanitizeOptionalText(
                                   phoneController.text);
+                          final String? previousPhone =
+                              currentProfile.phone?.trim();
 
                           setStateDialog(() {
                             isSaving = true;
                             errorText = null;
                           });
 
+                          DocumentReference<Map<String, dynamic>>?
+                              reservedPhoneRef;
+                          bool reservedPhoneCreated = false;
+
                           try {
                             final Map<String, dynamic> updates = <String, dynamic>{
                               'displayName': sanitizedName,
+                              'phone': FieldValue.delete(),
                             };
+
                             if (sanitizedPhone != null) {
                               updates['phoneNumber'] = sanitizedPhone;
+
+                              if (sanitizedPhone != previousPhone) {
+                                reservedPhoneRef = FirebaseFirestore.instance
+                                    .collection('phoneNumbers')
+                                    .doc(sanitizedPhone);
+
+                                // Reserve the updated phone number atomically so
+                                // two profiles cannot claim it simultaneously.
+                                await FirebaseFirestore.instance
+                                    .runTransaction((transaction) async {
+                                  final DocumentSnapshot<Map<String, dynamic>>
+                                      snapshot =
+                                      await transaction.get(reservedPhoneRef!);
+                                  if (snapshot.exists) {
+                                    throw FirebaseException(
+                                      plugin: 'cloud_firestore',
+                                      code: 'already-exists',
+                                      message: 'Phone number already reserved.',
+                                    );
+                                  }
+                                  transaction.set(
+                                    reservedPhoneRef!,
+                                    <String, dynamic>{
+                                      'userId': currentProfile.id,
+                                    },
+                                  );
+                                });
+                                reservedPhoneCreated = true;
+                              }
                             } else {
                               updates['phoneNumber'] = FieldValue.delete();
                             }
-                            updates['phone'] = FieldValue.delete();
 
                             await FirebaseFirestore.instance
                                 .collection('users')
                                 .doc(currentProfile.id)
                                 .set(updates, SetOptions(merge: true));
+
+                            if (previousPhone != null &&
+                                previousPhone.isNotEmpty &&
+                                previousPhone != sanitizedPhone) {
+                              try {
+                                await FirebaseFirestore.instance
+                                    .collection('phoneNumbers')
+                                    .doc(previousPhone)
+                                    .delete();
+                              } catch (_) {
+                                // Best-effort cleanup; the phoneNumbers document
+                                // is only an index for uniqueness enforcement.
+                              }
+                            }
 
                             final User? authUser =
                                 FirebaseAuth.instance.currentUser;
@@ -680,7 +730,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                             if (!mounted) return;
                             Navigator.of(dialogContext).pop();
+                          } on FirebaseException catch (e) {
+                            if (reservedPhoneCreated && reservedPhoneRef != null) {
+                              try {
+                                await reservedPhoneRef.delete();
+                              } catch (_) {
+                                // Ignore rollback failures; we surface the
+                                // original validation error below.
+                              }
+                            }
+
+                            setStateDialog(() {
+                              isSaving = false;
+                              errorText =
+                                  e.plugin == 'cloud_firestore' &&
+                                          e.code == 'already-exists'
+                                      ? 'This phone number is already registered.'
+                                      : 'تعذّر حفظ التعديلات، حاول مرة أخرى.';
+                            });
                           } catch (_) {
+                            if (reservedPhoneCreated && reservedPhoneRef != null) {
+                              try {
+                                await reservedPhoneRef.delete();
+                              } catch (_) {}
+                            }
+
                             setStateDialog(() {
                               isSaving = false;
                               errorText =
