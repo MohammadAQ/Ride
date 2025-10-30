@@ -26,6 +26,8 @@
   "auth_error_wrong_password": "Invalid password.",
   "nav_profile": "Profile",
   "nav_my_bookings": "My Bookings",
+  "nav_driver_requests": "Passenger Requests",
+  "nav_my_requests": "My Requests",
   "nav_create_trip": "Create Trip",
   "nav_my_trips": "My Trips",
   "nav_search_trips": "Search Trips",

@@ -9,8 +9,10 @@ import 'package:flutter/services.dart';
 import 'package:ride/models/user_profile.dart';
 import 'package:ride/widgets/user_profile_preview.dart';
 
+import '../models/ride_request.dart';
 import '../services/api_service.dart';
 import '../services/booking_service.dart';
+import '../services/ride_request_service.dart';
 
 const MethodChannel _phoneLauncherChannel =
     MethodChannel('com.example.carpal_app/phone_launcher');
@@ -65,6 +67,7 @@ class SearchTripsScreen extends StatefulWidget {
 class _SearchTripsScreenState extends State<SearchTripsScreen> {
   final ApiService _apiService = ApiService();
   final BookingService _bookingService = BookingService();
+  final RideRequestService _rideRequestService = RideRequestService();
   final List<Map<String, dynamic>> _trips = <Map<String, dynamic>>[];
   String? _selectedFromCity;
   String? _selectedToCity;
@@ -75,6 +78,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
   bool _initialLoading = true;
   String? _errorMessage;
   final Set<String> _bookingInProgress = <String>{};
+  final Set<String> _requestInProgress = <String>{};
   User? _currentUser;
   StreamSubscription<User?>? _authSubscription;
 
@@ -177,6 +181,73 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
   }
 
   Future<void> _onRefresh() => _fetchTrips(reset: true);
+
+  Future<void> _submitRideRequest({
+    required String tripId,
+    required String driverId,
+  }) async {
+    final User? user = _currentUser ?? FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('يرجى تسجيل الدخول لطلب الحجز.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    if (tripId.isEmpty || driverId.isEmpty) {
+      return;
+    }
+
+    if (_requestInProgress.contains(tripId)) {
+      return;
+    }
+
+    setState(() {
+      _requestInProgress.add(tripId);
+    });
+
+    try {
+      await _rideRequestService.createRideRequest(
+        rideId: tripId,
+        driverId: driverId,
+        passengerId: user.uid,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم إرسال الطلب، بانتظار موافقة السائق.'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر إرسال الطلب. حاول مرة أخرى لاحقًا.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _requestInProgress.remove(tripId);
+      });
+    }
+  }
 
   Future<void> _bookTrip(String tripId) async {
     final User? user = _currentUser ?? FirebaseAuth.instance.currentUser;
@@ -672,6 +743,12 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                     textDirection: baseDirection,
                   ),
                 ],
+                const SizedBox(height: 16),
+                _buildRideRequestSection(
+                  context: modalContext,
+                  tripId: tripId,
+                  driverId: driverId,
+                ),
                 const SizedBox(height: 16),
                 seatSection,
                 const SizedBox(height: 24),
@@ -1292,6 +1369,194 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     );
   }
 
+  Widget _buildRideRequestSection({
+    required BuildContext context,
+    required String tripId,
+    required String driverId,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    final TextDirection direction = Directionality.of(context);
+    final bool isRtl = direction == TextDirection.rtl;
+    final User? user = _currentUser ?? FirebaseAuth.instance.currentUser;
+
+    if (tripId.isEmpty) {
+      return _StatusBadge(
+        color: theme.colorScheme.error,
+        icon: Icons.info_outline,
+        text: 'لا يمكن إرسال طلب لهذه الرحلة',
+      );
+    }
+
+    if (driverId.isEmpty) {
+      return _StatusBadge(
+        color: theme.colorScheme.error,
+        icon: Icons.info_outline,
+        text: 'بيانات السائق غير متاحة',
+      );
+    }
+
+    if (user == null) {
+      return _StatusBadge(
+        color: theme.colorScheme.primary,
+        icon: Icons.lock_outline,
+        text: 'سجّل الدخول لطلب الحجز',
+      );
+    }
+
+    if (user.uid == driverId) {
+      return _StatusBadge(
+        color: Colors.orange.shade700,
+        icon: Icons.directions_car,
+        text: 'أنت سائق هذه الرحلة',
+      );
+    }
+
+    final bool isSending = _requestInProgress.contains(tripId);
+
+    return StreamBuilder<RideRequest?>(
+      stream: _rideRequestService.watchRequest(
+        rideId: tripId,
+        passengerId: user.uid,
+      ),
+      builder: (
+        BuildContext context,
+        AsyncSnapshot<RideRequest?> snapshot,
+      ) {
+        final RideRequest? request = snapshot.data;
+
+        if (snapshot.connectionState == ConnectionState.waiting && request == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (request == null) {
+          return FilledButton.icon(
+            onPressed: isSending
+                ? null
+                : () => _submitRideRequest(tripId: tripId, driverId: driverId),
+            icon: isSending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.send),
+            label: Text(isRtl ? 'طلب حجز' : 'Request Ride'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+          );
+        }
+
+        final _RideRequestStatusPresentation presentation =
+            _resolveRideRequestPresentation(request, theme);
+
+        final List<Widget> children = <Widget>[
+          Row(
+            mainAxisAlignment:
+                isRtl ? MainAxisAlignment.end : MainAxisAlignment.start,
+            children: <Widget>[
+              Icon(presentation.icon, color: presentation.color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  presentation.message,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: presentation.color,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                ),
+              ),
+            ],
+          ),
+        ];
+
+        if (request.status == 'rejected' && request.reason.trim().isNotEmpty) {
+          children
+            ..add(const SizedBox(height: 8))
+            ..add(
+              Align(
+                alignment:
+                    isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                child: Text(
+                  'السبب: ${request.reason}',
+                  style: theme.textTheme.bodyMedium,
+                  textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                ),
+              ),
+            );
+        }
+
+        if (request.status == 'rejected') {
+          children
+            ..add(const SizedBox(height: 8))
+            ..add(
+              Align(
+                alignment:
+                    isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: isSending
+                      ? null
+                      : () => _submitRideRequest(
+                            tripId: tripId,
+                            driverId: driverId,
+                          ),
+                  icon: isSending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                  label: Text(isRtl ? 'إعادة الإرسال' : 'Resend'),
+                ),
+              ),
+            );
+        }
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: presentation.color.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment:
+                isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: children,
+          ),
+        );
+      },
+    );
+  }
+
+  _RideRequestStatusPresentation _resolveRideRequestPresentation(
+    RideRequest request,
+    ThemeData theme,
+  ) {
+    switch (request.status) {
+      case 'accepted':
+        return _RideRequestStatusPresentation(
+          message: 'تمت الموافقة على الرحلة ✅',
+          color: Colors.green.shade700,
+          icon: Icons.check_circle_outline,
+        );
+      case 'rejected':
+        return _RideRequestStatusPresentation(
+          message: 'تم رفض الطلب ❌',
+          color: theme.colorScheme.error,
+          icon: Icons.cancel_outlined,
+        );
+      default:
+        return _RideRequestStatusPresentation(
+          message: 'تم إرسال الطلب، بانتظار موافقة السائق.',
+          color: Colors.amber.shade700,
+          icon: Icons.hourglass_bottom,
+        );
+    }
+  }
+
   String? _resolveDriverId(Map<String, dynamic> data) {
     final String? direct = _stringOrNull(data['driverId']);
     if (direct != null) {
@@ -1750,6 +2015,18 @@ class TripCard extends StatelessWidget {
       label: Text(isBooking ? bookingInProgressLabel : bookingLabel),
     );
   }
+}
+
+class _RideRequestStatusPresentation {
+  const _RideRequestStatusPresentation({
+    required this.message,
+    required this.color,
+    required this.icon,
+  });
+
+  final String message;
+  final Color color;
+  final IconData icon;
 }
 
 class _StatusBadge extends StatelessWidget {
