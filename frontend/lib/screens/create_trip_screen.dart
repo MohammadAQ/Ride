@@ -3,6 +3,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/api_service.dart';
+import '../l10n/app_localizations.dart';
+
+class _CityOption {
+  const _CityOption({required this.value, this.localizationKey});
+
+  final String value;
+  final String? localizationKey;
+
+  String label(BuildContext context) {
+    final key = localizationKey;
+    if (key == null || key.isEmpty) {
+      return value;
+    }
+    return context.translate(key);
+  }
+}
 
 class CreateTripScreen extends StatefulWidget {
   const CreateTripScreen({
@@ -21,18 +37,18 @@ class CreateTripScreen extends StatefulWidget {
 }
 
 class _CreateTripScreenState extends State<CreateTripScreen> {
-  static const List<String> _cities = <String>[
-    'رام الله',
-    'البيرة',
-    'نابلس',
-    'جنين',
-    'طولكرم',
-    'قلقيلية',
-    'طوباس',
-    'سلفيت',
-    'أريحا',
-    'بيت لحم',
-    'الخليل',
+  static const List<_CityOption> _defaultCities = <_CityOption>[
+    _CityOption(value: 'رام الله', localizationKey: 'city_ramallah'),
+    _CityOption(value: 'البيرة', localizationKey: 'city_al_bireh'),
+    _CityOption(value: 'نابلس', localizationKey: 'city_nablus'),
+    _CityOption(value: 'جنين', localizationKey: 'city_jenin'),
+    _CityOption(value: 'طولكرم', localizationKey: 'city_tulkarm'),
+    _CityOption(value: 'قلقيلية', localizationKey: 'city_qalqilya'),
+    _CityOption(value: 'طوباس', localizationKey: 'city_tubas'),
+    _CityOption(value: 'سلفيت', localizationKey: 'city_salfit'),
+    _CityOption(value: 'أريحا', localizationKey: 'city_jericho'),
+    _CityOption(value: 'بيت لحم', localizationKey: 'city_bethlehem'),
+    _CityOption(value: 'الخليل', localizationKey: 'city_hebron'),
   ];
 
   static const List<int> _seatOptions = <int>[1, 2, 3, 4, 5, 6];
@@ -47,7 +63,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   final TextEditingController _phoneController = TextEditingController();
   final ApiService _apiService = ApiService();
 
-  late final List<String> _cityOptions;
+  late final List<_CityOption> _cityOptions;
   late final bool _isEditing;
   String? _tripId;
   String? _fromCity;
@@ -60,7 +76,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   @override
   void initState() {
     super.initState();
-    _cityOptions = List<String>.from(_cities);
+    _cityOptions = List<_CityOption>.from(_defaultCities);
     _isEditing = widget.isEditing;
     if (_isEditing && widget.initialTripData != null) {
       _initialiseFromTrip(widget.initialTripData!);
@@ -124,17 +140,13 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
     final fromCity = _stringOrNull(trip['fromCity']);
     if (fromCity != null) {
-      if (!_cityOptions.contains(fromCity)) {
-        _cityOptions.add(fromCity);
-      }
+      _ensureCityOptionExists(fromCity);
       _fromCity = fromCity;
     }
 
     final toCity = _stringOrNull(trip['toCity']);
     if (toCity != null) {
-      if (!_cityOptions.contains(toCity)) {
-        _cityOptions.add(toCity);
-      }
+      _ensureCityOptionExists(toCity);
       _toCity = toCity;
     }
 
@@ -210,6 +222,16 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     }
   }
 
+  void _ensureCityOptionExists(String city) {
+    if (!_cityOptions.any((option) => option.value == city)) {
+      _cityOptions.add(_CityOption(value: city));
+    }
+  }
+
+  String _seatLabel(BuildContext context, int seatCount) {
+    return context.translate('create_trip_seat_option_$seatCount');
+  }
+
   String? _stringOrNull(dynamic value) {
     if (value == null) {
       return null;
@@ -263,8 +285,8 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     if (user == null) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يجب تسجيل الدخول لإنشاء رحلة.'),
+        SnackBar(
+          content: Text(context.translate('create_trip_toast_login_required')),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -275,8 +297,8 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     if (date == null) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يرجى اختيار تاريخ صالح للرحلة.'),
+        SnackBar(
+          content: Text(context.translate('create_trip_toast_invalid_date')),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -287,8 +309,8 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     if (time == null) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يرجى اختيار وقت صالح للرحلة.'),
+        SnackBar(
+          content: Text(context.translate('create_trip_toast_invalid_time')),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -307,8 +329,8 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       // Should not happen because validator already checks this, but guard anyway.
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يرجى إدخال سعر صالح.'),
+        SnackBar(
+          content: Text(context.translate('create_trip_toast_invalid_price')),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -318,8 +340,8 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     if (totalSeats == null || totalSeats <= 0) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يرجى إدخال عدد مقاعد صالح.'),
+        SnackBar(
+          content: Text(context.translate('create_trip_toast_invalid_seats')),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -329,8 +351,8 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     if (fromCity == null || toCity == null) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يرجى اختيار مدينتي الانطلاق والوصول.'),
+        SnackBar(
+          content: Text(context.translate('create_trip_toast_select_cities')),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -340,8 +362,8 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     if (fromCity == toCity) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يجب أن تكون مدينتا الانطلاق والوصول مختلفتين.'),
+        SnackBar(
+          content: Text(context.translate('create_trip_toast_different_cities')),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -370,8 +392,9 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
         if (tripId == null || tripId.isEmpty) {
           if (!context.mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('تعذر تحديد الرحلة لتعديلها. حاول مرة أخرى.'),
+            SnackBar(
+              content:
+                  Text(context.translate('create_trip_toast_missing_trip')),
               backgroundColor: Colors.redAccent,
             ),
           );
@@ -383,8 +406,10 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
         if (!context.mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تم حفظ التعديلات بنجاح'),
+          SnackBar(
+            content: Text(
+              context.translate('create_trip_toast_edit_success'),
+            ),
           ),
         );
 
@@ -395,8 +420,10 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
         if (!context.mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تم إنشاء الرحلة بنجاح ✅'),
+          SnackBar(
+            content: Text(
+              context.translate('create_trip_toast_create_success'),
+            ),
           ),
         );
 
@@ -425,24 +452,27 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       }
     } on ApiException catch (error) {
       if (!context.mounted) return;
-      final message = _isEditing
-          ? 'فشل حفظ التعديلات: ${error.message}'
-          : 'فشل إنشاء الرحلة: ${error.message}';
+      final baseMessage = context.translate(
+        _isEditing
+            ? 'create_trip_toast_edit_failed'
+            : 'create_trip_toast_create_failed',
+      );
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(message),
+          content: Text('$baseMessage: ${error.message}'),
           backgroundColor: Colors.redAccent,
         ),
       );
     } catch (_) {
       if (!context.mounted) return;
+      final message = context.translate(
+        _isEditing
+            ? 'create_trip_toast_edit_unexpected'
+            : 'create_trip_toast_create_unexpected',
+      );
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            _isEditing
-                ? 'فشل حفظ التعديلات: حدث خطأ غير متوقع'
-                : 'فشل إنشاء الرحلة: حدث خطأ غير متوقع',
-          ),
+          content: Text(message),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -457,6 +487,17 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   Widget _buildBody() {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final textDirection = Directionality.of(context);
+    final String headerTitle = context.translate(
+      _isEditing
+          ? 'create_trip_header_title_edit'
+          : 'create_trip_header_title_new',
+    );
+    final String headerSubtitle = context.translate(
+      _isEditing
+          ? 'create_trip_header_subtitle_edit'
+          : 'create_trip_header_subtitle_new',
+    );
 
     final form = SafeArea(
       child: Center(
@@ -471,7 +512,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Directionality(
-                  textDirection: TextDirection.rtl,
+                  textDirection: textDirection,
                   child: Form(
                     key: _formKey,
                     child: Column(
@@ -479,18 +520,16 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          _isEditing ? 'تعديل الرحلة' : 'إنشاء رحلة جديدة',
-                          textAlign: TextAlign.right,
+                          headerTitle,
+                          textAlign: TextAlign.start,
                           style: theme.textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          _isEditing
-                              ? 'قم بتحديث تفاصيل رحلتك الحالية.'
-                              : 'املأ جميع تفاصيل الرحلة ليتمكن الركاب من الانضمام بسهولة.',
-                          textAlign: TextAlign.right,
+                          headerSubtitle,
+                          textAlign: TextAlign.start,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
@@ -502,22 +541,24 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                           items: _cityOptions
                               .map(
                                 (city) => DropdownMenuItem<String>(
-                                  value: city,
+                                  value: city.value,
                                   child: Align(
                                     alignment: AlignmentDirectional.centerStart,
-                                    child: Text(city),
+                                    child: Text(city.label(context)),
                                   ),
                                 ),
                               )
                               .toList(),
-                          decoration: const InputDecoration(
-                            labelText: 'مدينة الانطلاق',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Padding(
+                          decoration: InputDecoration(
+                            labelText:
+                                context.translate('create_trip_departure_label'),
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Padding(
                               padding: EdgeInsetsDirectional.only(start: 12, end: 8),
                               child: Text('🧭'),
                             ),
-                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                            prefixIconConstraints:
+                                const BoxConstraints(minWidth: 0, minHeight: 0),
                           ),
                           onChanged: (value) {
                             setState(() {
@@ -526,7 +567,8 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                           },
                           validator: (value) {
                             if (value == null || value.isEmpty) {
-                              return 'يرجى اختيار مدينة الانطلاق';
+                              return context
+                                  .translate('create_trip_departure_error');
                             }
                             return null;
                           },
@@ -538,22 +580,24 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                           items: _cityOptions
                               .map(
                                 (city) => DropdownMenuItem<String>(
-                                  value: city,
+                                  value: city.value,
                                   child: Align(
                                     alignment: AlignmentDirectional.centerStart,
-                                    child: Text(city),
+                                    child: Text(city.label(context)),
                                   ),
                                 ),
                               )
                               .toList(),
-                          decoration: const InputDecoration(
-                            labelText: 'مدينة الوصول',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Padding(
+                          decoration: InputDecoration(
+                            labelText:
+                                context.translate('create_trip_destination_label'),
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Padding(
                               padding: EdgeInsetsDirectional.only(start: 12, end: 8),
                               child: Text('📍'),
                             ),
-                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                            prefixIconConstraints:
+                                const BoxConstraints(minWidth: 0, minHeight: 0),
                           ),
                           onChanged: (value) {
                             setState(() {
@@ -562,10 +606,12 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                           },
                           validator: (value) {
                             if (value == null || value.isEmpty) {
-                              return 'يرجى اختيار مدينة الوصول';
+                              return context
+                                  .translate('create_trip_destination_error');
                             }
                             if (value == _fromCity) {
-                              return 'يجب أن تكون مدينة الوصول مختلفة عن مدينة الانطلاق';
+                              return context.translate(
+                                  'create_trip_destination_same_error');
                             }
                             return null;
                           },
@@ -574,20 +620,23 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                         TextFormField(
                           controller: _dateController,
                           readOnly: true,
-                          decoration: const InputDecoration(
-                            labelText: 'التاريخ',
-                            hintText: 'اختر تاريخ الرحلة',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Padding(
+                          decoration: InputDecoration(
+                            labelText:
+                                context.translate('create_trip_date_label'),
+                            hintText: context.translate('create_trip_date_hint'),
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Padding(
                               padding: EdgeInsetsDirectional.only(start: 12, end: 8),
                               child: Text('📅'),
                             ),
-                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                            prefixIconConstraints:
+                                const BoxConstraints(minWidth: 0, minHeight: 0),
                           ),
                           onTap: _pickDate,
                           validator: (value) {
                             if (_selectedDate == null) {
-                              return 'يرجى اختيار تاريخ الرحلة';
+                              return context
+                                  .translate('create_trip_date_validation_error');
                             }
                             return null;
                           },
@@ -596,20 +645,23 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                         TextFormField(
                           controller: _timeController,
                           readOnly: true,
-                          decoration: const InputDecoration(
-                            labelText: 'الوقت',
-                            hintText: 'اختر وقت الرحلة',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Padding(
+                          decoration: InputDecoration(
+                            labelText:
+                                context.translate('create_trip_time_label'),
+                            hintText: context.translate('create_trip_time_hint'),
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Padding(
                               padding: EdgeInsetsDirectional.only(start: 12, end: 8),
                               child: Text('🕐'),
                             ),
-                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                            prefixIconConstraints:
+                                const BoxConstraints(minWidth: 0, minHeight: 0),
                           ),
                           onTap: _pickTime,
                           validator: (value) {
                             if (_selectedTime == null) {
-                              return 'يرجى اختيار وقت الرحلة';
+                              return context
+                                  .translate('create_trip_time_validation_error');
                             }
                             return null;
                           },
@@ -627,20 +679,22 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                                   value: seat,
                                   child: Align(
                                     alignment: AlignmentDirectional.centerStart,
-                                    child: Text(seat.toString()),
+                                    child: Text(_seatLabel(context, seat)),
                                   ),
                                 ),
                               )
                               .toList(),
-                          decoration: const InputDecoration(
-                            labelText: 'Available Seats',
-                            hintText: 'Select number of seats',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Padding(
+                          decoration: InputDecoration(
+                            labelText:
+                                context.translate('create_trip_seats_label'),
+                            hintText: context.translate('create_trip_seats_hint'),
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Padding(
                               padding: EdgeInsetsDirectional.only(start: 12, end: 8),
                               child: Text('💺'),
                             ),
-                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                            prefixIconConstraints:
+                                const BoxConstraints(minWidth: 0, minHeight: 0),
                           ),
                           onChanged: (value) {
                             setState(() {
@@ -651,7 +705,8 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                           },
                           validator: (value) {
                             if (value == null) {
-                              return 'يرجى اختيار عدد المقاعد.';
+                              return context
+                                  .translate('create_trip_seats_validation_error');
                             }
                             return null;
                           },
@@ -665,23 +720,27 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                           inputFormatters: <TextInputFormatter>[
                             FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
                           ],
-                          decoration: const InputDecoration(
-                            labelText: 'السعر',
-                            hintText: 'أدخل سعر الرحلة',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Padding(
+                          decoration: InputDecoration(
+                            labelText: context.translate('create_trip_price_label'),
+                            hintText: context.translate('create_trip_price_hint'),
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Padding(
                               padding: EdgeInsetsDirectional.only(start: 12, end: 8),
                               child: Text('💰'),
                             ),
-                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                            prefixIconConstraints:
+                                const BoxConstraints(minWidth: 0, minHeight: 0),
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
-                              return 'يرجى إدخال السعر';
+                              return context
+                                  .translate('create_trip_price_validation_required');
                             }
-                            final price = double.tryParse(value.trim().replaceAll(',', '.'));
+                            final price =
+                                double.tryParse(value.trim().replaceAll(',', '.'));
                             if (price == null || price <= 0) {
-                              return 'أدخل رقمًا صحيحًا أكبر من صفر';
+                              return context
+                                  .translate('create_trip_price_validation_positive');
                             }
                             return null;
                           },
@@ -690,19 +749,23 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                         TextFormField(
                           controller: _carModelController,
                           textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            labelText: 'طراز السيارة',
-                            hintText: 'مثال: Kia Sportage 2021',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Padding(
+                          decoration: InputDecoration(
+                            labelText:
+                                context.translate('create_trip_car_model_label'),
+                            hintText:
+                                context.translate('create_trip_car_model_hint'),
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Padding(
                               padding: EdgeInsetsDirectional.only(start: 12, end: 8),
                               child: Text('🚗'),
                             ),
-                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                            prefixIconConstraints:
+                                const BoxConstraints(minWidth: 0, minHeight: 0),
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
-                              return 'يرجى إدخال طراز السيارة';
+                              return context
+                                  .translate('create_trip_car_model_validation');
                             }
                             return null;
                           },
@@ -711,19 +774,23 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                         TextFormField(
                           controller: _carColorController,
                           textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            labelText: 'لون السيارة',
-                            hintText: 'مثال: أسود',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Padding(
+                          decoration: InputDecoration(
+                            labelText:
+                                context.translate('create_trip_car_color_label'),
+                            hintText:
+                                context.translate('create_trip_car_color_hint'),
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Padding(
                               padding: EdgeInsetsDirectional.only(start: 12, end: 8),
                               child: Text('🎨'),
                             ),
-                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                            prefixIconConstraints:
+                                const BoxConstraints(minWidth: 0, minHeight: 0),
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
-                              return 'يرجى إدخال لون السيارة';
+                              return context
+                                  .translate('create_trip_car_color_validation');
                             }
                             return null;
                           },
@@ -732,22 +799,26 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                         TextFormField(
                           controller: _phoneController,
                           keyboardType: TextInputType.phone,
-                          decoration: const InputDecoration(
-                            labelText: 'رقم الجوال',
-                            hintText: 'أدخل رقم التواصل مع السائق',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Padding(
+                          decoration: InputDecoration(
+                            labelText:
+                                context.translate('create_trip_phone_label'),
+                            hintText: context.translate('create_trip_phone_hint'),
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Padding(
                               padding: EdgeInsetsDirectional.only(start: 12, end: 8),
                               child: Text('📞'),
                             ),
-                            prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                            prefixIconConstraints:
+                                const BoxConstraints(minWidth: 0, minHeight: 0),
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
-                              return 'الرجاء إدخال رقم الجوال';
+                              return context
+                                  .translate('create_trip_phone_validation_required');
                             }
                             if (value.trim().length < 6) {
-                              return 'رقم الجوال المدخل غير صالح';
+                              return context
+                                  .translate('create_trip_phone_validation_invalid');
                             }
                             return null;
                           },
@@ -764,8 +835,14 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                               : Icon(_isEditing ? Icons.save_outlined : Icons.check_circle_outline),
                           label: Text(
                             _isSubmitting
-                                ? (_isEditing ? 'جاري حفظ التعديلات...' : 'جاري إنشاء الرحلة...')
-                                : (_isEditing ? 'حفظ التعديلات' : 'إنشاء الرحلة'),
+                                ? (_isEditing
+                                    ? context.translate('create_trip_button_saving')
+                                    : context.translate(
+                                        'create_trip_button_creating'))
+                                : (_isEditing
+                                    ? context.translate('create_trip_button_save')
+                                    : context
+                                        .translate('create_trip_button_create')),
                           ),
                         ),
                         if (_isEditing) ...[
@@ -776,7 +853,8 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                                 : () {
                                     Navigator.of(context).maybePop();
                                   },
-                            child: const Text('إلغاء'),
+                            child:
+                                Text(context.translate('create_trip_button_cancel')),
                           ),
                         ],
                       ],
@@ -801,7 +879,13 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? 'تعديل الرحلة' : 'إنشاء رحلة'),
+        title: Text(
+          context.translate(
+            _isEditing
+                ? 'create_trip_appbar_edit'
+                : 'nav_create_trip',
+          ),
+        ),
       ),
       body: _buildBody(),
     );
