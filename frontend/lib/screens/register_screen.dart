@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -13,6 +14,7 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _fullNameController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
@@ -21,6 +23,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void dispose() {
     _fullNameController.dispose();
+    _phoneController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -33,6 +36,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isSubmitting = true);
 
     try {
+      final String trimmedPhone = _phoneController.text.trim();
+
+      // Check Firestore for an existing user with the same phone number to enforce uniqueness.
+      final QuerySnapshot<Map<String, dynamic>> existingPhoneSnapshot =
+          await FirebaseFirestore.instance
+              .collection('users')
+              .where('phoneNumber', isEqualTo: trimmedPhone)
+              .limit(1)
+              .get();
+
+      if (existingPhoneSnapshot.docs.isNotEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('This phone number is already registered.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return;
+      }
+
       final userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
@@ -42,6 +67,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
       await userCredential.user?.updateDisplayName(
         _fullNameController.text.trim(),
       );
+
+      final User? user = userCredential.user;
+
+      if (user != null) {
+        // Save the newly registered user's profile, including the verified phone number, to Firestore.
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
+          <String, dynamic>{
+            'displayName': _fullNameController.text.trim(),
+            'name': _fullNameController.text.trim(),
+            'email': _emailController.text.trim(),
+            'phoneNumber': trimmedPhone,
+            'createdAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      }
 
       if (!mounted) return;
 
@@ -90,6 +131,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
     if (!emailRegex.hasMatch(value.trim())) {
       return 'Please enter a valid email address.';
+    }
+    return null;
+  }
+
+  String? _validatePhone(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Phone number is required.';
+    }
+    // Enforce Palestinian phone numbers that start with 059/056 and contain exactly 10 digits.
+    final RegExp phoneRegex = RegExp(r'^(059|056)[0-9]{7}$');
+    if (!phoneRegex.hasMatch(value.trim())) {
+      return 'Please enter a valid phone number (e.g., 0591234567 or 0569876543).';
     }
     return null;
   }
@@ -149,6 +202,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     }
                     return null;
                   },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _phoneController,
+                  textInputAction: TextInputAction.next,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone Number',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: _validatePhone,
                 ),
                 const SizedBox(height: 16),
                 TextFormField(

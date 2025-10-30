@@ -638,10 +638,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               'displayName': sanitizedName,
                             };
                             if (sanitizedPhone != null) {
-                              updates['phone'] = sanitizedPhone;
+                              updates['phoneNumber'] = sanitizedPhone;
                             } else {
-                              updates['phone'] = FieldValue.delete();
+                              updates['phoneNumber'] = FieldValue.delete();
                             }
+                            updates['phone'] = FieldValue.delete();
 
                             await FirebaseFirestore.instance
                                 .collection('users')
@@ -1030,7 +1031,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     Expanded(
                       child: _buildInfoTile(
                         icon: Icons.phone_rounded,
-                        label: 'رقم الهاتف',
+                        label: 'Phone Number',
                         value: phone,
                         theme: theme,
                       ),
@@ -1048,12 +1049,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       const SizedBox(height: 16),
                     ],
-                    _buildInfoTile(
-                      icon: Icons.phone_rounded,
-                      label: 'رقم الهاتف',
-                      value: phone,
-                      theme: theme,
-                    ),
+                      _buildInfoTile(
+                        icon: Icons.phone_rounded,
+                        label: 'Phone Number',
+                        value: phone,
+                        theme: theme,
+                      ),
                   ],
                 );
 
