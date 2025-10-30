@@ -1,7 +1,8 @@
 import admin from 'firebase-admin';
 import { config } from './env.js';
 
-const looksLikeEmail = (value: string): boolean => /[^\s@]+@[^\s@]+\.[^\s@]+/.test(value);
+const looksLikeEmail = (value: string): boolean =>
+  /[^\s@]+@[^\s@]+\.[^\s@]+/.test(value);
 
 const sanitizeName = (value: unknown): string | undefined => {
   if (typeof value !== 'string') {
@@ -49,11 +50,12 @@ const createMockDecodedToken = (token: string): admin.auth.DecodedIdToken => {
 
   if (token.startsWith('mock:')) {
     const [, uid = '', email, name] = token.split(':');
-
     const sanitizedName = sanitizeName(name);
 
     if (!uid) {
-      throw new Error('Mock tokens must follow the format "mock:<uid>[:<email>[:<name>]]".');
+      throw new Error(
+        'Mock tokens must follow the format "mock:<uid>[:<email>[:<name>]]".'
+      );
     }
 
     const issuedAt = Math.floor(Date.now() / 1000);
@@ -68,14 +70,17 @@ const createMockDecodedToken = (token: string): admin.auth.DecodedIdToken => {
 
   try {
     const json = Buffer.from(token, 'base64url').toString('utf8');
-    const parsed = JSON.parse(json) as { uid?: string; email?: string | null; name?: string | null };
+    const parsed = JSON.parse(json) as {
+      uid?: string;
+      email?: string | null;
+      name?: string | null;
+    };
 
     if (!parsed.uid) {
       throw new Error('Decoded token is missing the "uid" property.');
     }
 
     const issuedAt = Math.floor(Date.now() / 1000);
-
     const sanitizedName = sanitizeName(parsed.name);
 
     return buildMockDecodedToken({
@@ -85,7 +90,9 @@ const createMockDecodedToken = (token: string): admin.auth.DecodedIdToken => {
       issuedAt,
     });
   } catch (error) {
-    throw new Error('Unable to decode mock token. Provide a base64url encoded JSON token or use the "mock:" format.');
+    throw new Error(
+      'Unable to decode mock token. Provide a base64url encoded JSON token or use the "mock:" format.'
+    );
   }
 };
 
@@ -98,7 +105,8 @@ if (config.firebaseEnabled && config.firebase) {
       credential: admin.credential.cert({
         projectId: config.firebase.projectId,
         clientEmail: config.firebase.clientEmail,
-        privateKey: config.firebase.privateKey,
+        // ✅ إصلاح المفتاح: نحول \n إلى أسطر حقيقية
+        privateKey: config.firebase.privateKey?.replace(/\\n/g, '\n'),
       }),
     });
     console.log('🔥 Firebase Admin initialized');

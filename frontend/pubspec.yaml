@@ -44,7 +44,7 @@ dependencies:
   firebase_messaging: ^14.9.4
   image_picker: ^1.1.1
   http: ^1.2.1
-  intl: ^0.19.0
+  intl: 0.20.2
   flutter_local_notifications: ^17.2.1
 
 dev_dependencies:
@@ -67,7 +67,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/ride_logo.png
+    - assets/Ride_Logo.png
     - assets/google_logo.png
     - assets/whatsapp_logo.png
     - assets/lang/
