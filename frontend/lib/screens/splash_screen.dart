@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'auth_wrapper.dart';
+import 'login_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -13,42 +13,34 @@ class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _fadeAnimation;
+  late final Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(seconds: 2),
     );
-    _fadeAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
     );
 
     _controller.forward();
 
-    _controller.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        Future<void>.delayed(const Duration(milliseconds: 200), () {
-          if (!mounted) return;
-          Navigator.of(context).pushReplacement(_createFadeRoute());
-        });
-      }
+    Future.delayed(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => const LoginScreen(),
+        ),
+      );
     });
-  }
-
-  PageRouteBuilder<void> _createFadeRoute() {
-    return PageRouteBuilder<void>(
-      pageBuilder: (context, animation, secondaryAnimation) => const AuthWrapper(),
-      transitionDuration: const Duration(milliseconds: 500),
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        return FadeTransition(
-          opacity: animation,
-          child: child,
-        );
-      },
-    );
   }
 
   @override
@@ -59,42 +51,16 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final shortestSide = size.shortestSide;
-    final maxDimension = (shortestSide * 0.45).clamp(140.0, 240.0);
-
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF001F3F), Color(0xFF00BFA5)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: Center(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: maxDimension,
-                maxHeight: maxDimension,
-                minWidth: maxDimension * 0.6,
-                minHeight: maxDimension * 0.6,
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final double dimension =
-                      constraints.maxWidth.clamp(120.0, 260.0);
-                  return Image.asset(
-                    'assets/images/ride_logo.png',
-                    width: dimension,
-                    height: dimension,
-                    filterQuality: FilterQuality.high,
-                  );
-                },
-              ),
+      backgroundColor: const Color(0xFF001F3F),
+      body: Center(
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: ScaleTransition(
+            scale: _scaleAnimation,
+            child: Image.asset(
+              'assets/images/ride_logo.png',
+              width: 180,
             ),
           ),
         ),
