@@ -1,8 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-import 'package:carpal_app/screens/login_screen.dart';
-import 'package:carpal_app/screens/register_screen.dart';
+import 'package:ride/screens/login_screen.dart';
+import 'package:ride/screens/register_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});

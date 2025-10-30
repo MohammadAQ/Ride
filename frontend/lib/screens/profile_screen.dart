@@ -6,10 +6,10 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import 'package:carpal_app/models/user_profile.dart';
-import 'package:carpal_app/screens/login_screen.dart';
-import 'package:carpal_app/services/notification_service.dart';
-import 'package:carpal_app/services/user_profile_cache.dart';
+import 'package:ride/models/user_profile.dart';
+import 'package:ride/screens/login_screen.dart';
+import 'package:ride/services/notification_service.dart';
+import 'package:ride/services/user_profile_cache.dart';
 
 class _ProfileStatistics {
   const _ProfileStatistics({

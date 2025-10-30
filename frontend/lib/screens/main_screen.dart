@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:carpal_app/l10n/app_localizations.dart';
-import 'package:carpal_app/screens/create_trip_screen.dart';
-import 'package:carpal_app/screens/my_bookings_screen.dart';
-import 'package:carpal_app/screens/my_trips_screen.dart';
-import 'package:carpal_app/screens/profile_screen.dart';
-import 'package:carpal_app/screens/search_trips_screen.dart';
+import 'package:ride/l10n/app_localizations.dart';
+import 'package:ride/screens/create_trip_screen.dart';
+import 'package:ride/screens/my_bookings_screen.dart';
+import 'package:ride/screens/my_trips_screen.dart';
+import 'package:ride/screens/profile_screen.dart';
+import 'package:ride/screens/search_trips_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});

@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'package:carpal_app/models/user_profile.dart';
+import 'package:ride/models/user_profile.dart';
 
 /// A lightweight in-memory cache for Firestore-backed [UserProfile] documents.
 ///

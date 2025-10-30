@@ -4,8 +4,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'package:carpal_app/screens/splash_screen.dart';
-import 'package:carpal_app/services/notification_service.dart';
+import 'package:ride/screens/splash_screen.dart';
+import 'package:ride/services/notification_service.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
 

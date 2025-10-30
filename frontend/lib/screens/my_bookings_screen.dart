@@ -2,8 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import 'package:carpal_app/l10n/app_localizations.dart';
-import 'package:carpal_app/services/booking_service.dart';
+import 'package:ride/l10n/app_localizations.dart';
+import 'package:ride/services/booking_service.dart';
 
 class MyBookingsScreen extends StatelessWidget {
   const MyBookingsScreen({super.key, this.showAppBar = true});

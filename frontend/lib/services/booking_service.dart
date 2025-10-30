@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
-import 'package:carpal_app/models/user_profile.dart';
+import 'package:ride/models/user_profile.dart';
 
 class BookingException implements Exception {
   BookingException(this.code, this.message);

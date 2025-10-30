@@ -2,8 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import 'package:carpal_app/models/user_profile.dart';
-import 'package:carpal_app/services/user_profile_cache.dart';
+import 'package:ride/models/user_profile.dart';
+import 'package:ride/services/user_profile_cache.dart';
 
 import '../services/phone_launcher.dart';
 
