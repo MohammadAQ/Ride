@@ -198,12 +198,18 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       return;
     }
 
+    final String languageCode = Localizations.localeOf(context).languageCode;
+
     setState(() {
       _bookingInProgress.add(tripId);
     });
 
     try {
-      await _bookingService.bookTrip(tripId: tripId, userId: user.uid);
+      await _bookingService.bookTrip(
+        tripId: tripId,
+        userId: user.uid,
+        languageCode: languageCode,
+      );
 
       if (!mounted) {
         return;
@@ -232,7 +238,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
               textDirection: direction,
               child: AlertDialog(
                 title: Text(title),
-                content: const Text('You cannot book your own trip.'),
+                content: Text(error.message),
                 actions: <Widget>[
                   TextButton(
                     onPressed: () => Navigator.of(dialogContext).pop(),
