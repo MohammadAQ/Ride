@@ -47,8 +47,9 @@ class _AuthScreenState extends State<AuthScreen> {
               // Logo
               Center(
                 child: Image.asset(
-                  'assets/logo.png',
-                  height: 80,
+                  'assets/images/ride_logo.png',
+                  height: 90,
+                  filterQuality: FilterQuality.high,
                 ),
               ),
               const SizedBox(height: 12),
