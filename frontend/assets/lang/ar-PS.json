@@ -26,6 +26,8 @@
   "auth_error_wrong_password": "كلمة المرور غير صحيحة.",
   "nav_profile": "الملف الشخصي",
   "nav_my_bookings": "حجوزاتي",
+  "nav_driver_requests": "طلبات الركاب",
+  "nav_my_requests": "طلباتي",
   "nav_create_trip": "إنشاء رحلة",
   "nav_my_trips": "رحلاتي",
   "nav_search_trips": "بحث الرحلات",
