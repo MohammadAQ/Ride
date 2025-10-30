@@ -1,4 +1,4 @@
-name: carpal_app
+name: ride
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -67,7 +67,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/Ride_Logo.png
+    - assets/images/ride_logo.png
     - assets/google_logo.png
     - assets/whatsapp_logo.png
     - assets/lang/
@@ -104,16 +104,10 @@ flutter_icons:
   android: true
   ios: true
   image_path: "assets/images/ride_logo.png"
-  adaptive_icon_foreground: "assets/images/ride_logo.png"
-  adaptive_icon_background: "#001F3F"
-  min_sdk_android: 21
 
 flutter_native_splash:
-  color: "#001F3F"
-  color_dark: "#001F3F"
   image: assets/images/ride_logo.png
-  image_dark: assets/images/ride_logo.png
-  android_12:
-    image: assets/images/ride_logo.png
-    icon_background_color: "#001F3F"
-    color: "#001F3F"
+  color: "#001F3F"
+  branding: assets/images/ride_logo.png
+  android: true
+  ios: true
