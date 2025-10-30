@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import 'package:carpal_app/screens/main_screen.dart';
-import 'package:carpal_app/screens/register_screen.dart';
+import 'package:ride/screens/main_screen.dart';
+import 'package:ride/screens/register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final String initialEmail;

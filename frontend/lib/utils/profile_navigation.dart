@@ -1,8 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import 'package:carpal_app/models/user_profile.dart';
-import 'package:carpal_app/screens/profile_screen.dart';
+import 'package:ride/models/user_profile.dart';
+import 'package:ride/screens/profile_screen.dart';
 
 class ProfileNavigation {
   const ProfileNavigation._();
