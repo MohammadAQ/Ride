@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:ride/l10n/app_localizations.dart';
 import 'package:ride/screens/create_trip_screen.dart';
 import 'package:ride/screens/my_bookings_screen.dart';
-import 'package:ride/screens/my_ride_requests_screen.dart';
 import 'package:ride/screens/my_trips_screen.dart';
 import 'package:ride/screens/profile_screen.dart';
 import 'package:ride/screens/search_trips_screen.dart';
-import 'package:ride/screens/requests_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -33,16 +31,6 @@ class _MainScreenState extends State<MainScreen> {
       titleKey: 'nav_create_trip',
       icon: Icons.add_circle_outline,
       page: const CreateTripScreen(showAppBar: false),
-    ),
-    const _Destination(
-      titleKey: 'nav_driver_requests',
-      icon: Icons.inbox_outlined,
-      page: const RequestsScreen(showAppBar: false),
-    ),
-    const _Destination(
-      titleKey: 'nav_my_requests',
-      icon: Icons.mark_email_unread_outlined,
-      page: const MyRideRequestsScreen(showAppBar: false),
     ),
     const _Destination(
       titleKey: 'nav_my_bookings',
