@@ -19,7 +19,11 @@ class BookingService {
 
   final FirebaseFirestore _firestore;
 
-  Future<void> bookTrip({required String tripId, required String userId}) async {
+  Future<void> bookTrip({
+    required String tripId,
+    required String userId,
+    required String languageCode,
+  }) async {
     if (tripId.isEmpty) {
       throw BookingException('invalid-trip', 'معرّف الرحلة غير صالح.');
     }
@@ -27,6 +31,7 @@ class BookingService {
       throw BookingException('invalid-user', 'يجب تسجيل الدخول للحجز.');
     }
 
+    final String normalizedLanguage = languageCode.toLowerCase();
     final DocumentReference<Map<String, dynamic>> tripRef =
         _firestore.collection('trips').doc(tripId);
     final DocumentReference<Map<String, dynamic>> bookingRef =
@@ -39,6 +44,202 @@ class BookingService {
     final String passengerName = await _resolvePassengerName(userId);
 
     try {
+      final DocumentSnapshot<Map<String, dynamic>> tripSnapshot =
+          await tripRef.get();
+
+      if (!tripSnapshot.exists) {
+        throw BookingException(
+          'not-found',
+          _localizedMessage(
+            normalizedLanguage,
+            'This trip is no longer available.',
+            'هذه الرحلة غير متاحة.',
+          ),
+        );
+      }
+
+      final Map<String, dynamic>? tripData = tripSnapshot.data();
+
+      if (tripData == null) {
+        throw BookingException(
+          'invalid-data',
+          _localizedMessage(
+            normalizedLanguage,
+            'Unable to read trip details.',
+            'تعذر قراءة بيانات الرحلة.',
+          ),
+        );
+      }
+
+      final DateTime? selectedTripDateTime = _parseTripDateTime(tripData);
+
+      if (selectedTripDateTime == null) {
+        throw BookingException(
+          'invalid-trip-time',
+          _localizedMessage(
+            normalizedLanguage,
+            'The trip date or time is invalid.',
+            'تاريخ أو وقت الرحلة غير صالح.',
+          ),
+        );
+      }
+
+      if (!selectedTripDateTime.isAfter(DateTime.now())) {
+        throw BookingException(
+          'trip-expired',
+          _localizedMessage(
+            normalizedLanguage,
+            'This trip has already ended.',
+            'لا يمكن الحجز في رحلة منتهية.',
+          ),
+        );
+      }
+
+      final QuerySnapshot<Map<String, dynamic>> passengerBookingsSnapshot =
+          await _firestore
+              .collection('bookings')
+              .where('passengerId', isEqualTo: userId)
+              .get();
+
+      final QuerySnapshot<Map<String, dynamic>> driverTripsSnapshot =
+          await _firestore
+              .collection('trips')
+              .where('driverId', isEqualTo: userId)
+              .get();
+
+      final Map<String, DateTime?> tripScheduleCache = <String, DateTime?>{};
+
+      Future<DateTime?> resolveTripSchedule(
+        String relatedTripId,
+        dynamic tripReference,
+      ) async {
+        final String cacheKey = relatedTripId;
+        if (cacheKey.isNotEmpty && tripScheduleCache.containsKey(cacheKey)) {
+          return tripScheduleCache[cacheKey];
+        }
+
+        DateTime? schedule;
+
+        if (tripReference is DocumentReference<Map<String, dynamic>>) {
+          final DocumentSnapshot<Map<String, dynamic>> relatedTripSnapshot =
+              await tripReference.get();
+          if (relatedTripSnapshot.exists) {
+            schedule =
+                _parseTripDateTime(relatedTripSnapshot.data() ?? <String, dynamic>{});
+          }
+        } else if (tripReference is DocumentReference) {
+          final DocumentSnapshot<Object?> relatedTripSnapshot =
+              await tripReference.get();
+          if (relatedTripSnapshot.exists) {
+            final Object? rawData = relatedTripSnapshot.data();
+            if (rawData is Map<String, dynamic>) {
+              schedule = _parseTripDateTime(rawData);
+            }
+          }
+        }
+
+        if (schedule == null && relatedTripId.isNotEmpty) {
+          final DocumentSnapshot<Map<String, dynamic>> relatedTripSnapshot =
+              await _firestore.collection('trips').doc(relatedTripId).get();
+          if (relatedTripSnapshot.exists) {
+            schedule =
+                _parseTripDateTime(relatedTripSnapshot.data() ?? <String, dynamic>{});
+          }
+        }
+
+        if (cacheKey.isNotEmpty) {
+          tripScheduleCache[cacheKey] = schedule;
+        }
+
+        return schedule;
+      }
+
+      final DateTime now = DateTime.now();
+
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> bookingDoc
+          in passengerBookingsSnapshot.docs) {
+        final Map<String, dynamic> bookingData = bookingDoc.data();
+        final String status =
+            _parseString(bookingData['status']).toLowerCase();
+
+        if (status == 'canceled') {
+          continue;
+        }
+
+        final String relatedTripId = _parseString(bookingData['tripId']);
+        if (relatedTripId == tripId) {
+          continue;
+        }
+
+        final DateTime? bookingTripDateTime = await resolveTripSchedule(
+          relatedTripId,
+          bookingData['tripRef'],
+        );
+
+        if (bookingTripDateTime == null) {
+          continue;
+        }
+
+        if (!bookingTripDateTime.isAfter(now)) {
+          continue;
+        }
+
+        if (_isSameMinute(bookingTripDateTime, selectedTripDateTime)) {
+          throw BookingException(
+            'booking-conflict-same-time',
+            _localizedMessage(
+              normalizedLanguage,
+              'You already have a booking at this time.',
+              'لديك حجز آخر في نفس الوقت.',
+            ),
+          );
+        }
+
+        final Duration difference =
+            bookingTripDateTime.difference(selectedTripDateTime).abs();
+        if (difference.inMinutes <= 60) {
+          throw BookingException(
+            'booking-conflict-hour',
+            _localizedMessage(
+              normalizedLanguage,
+              'You already have another trip within 1 hour of this time.',
+              'لديك رحلة أخرى في نفس الوقت أو خلال ساعة من هذا الموعد.',
+            ),
+          );
+        }
+      }
+
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> driverTripDoc
+          in driverTripsSnapshot.docs) {
+        final String driverTripId = driverTripDoc.id;
+        if (driverTripId == tripId) {
+          continue;
+        }
+
+        final Map<String, dynamic> driverTripData = driverTripDoc.data();
+        final DateTime? driverTripDateTime =
+            _parseTripDateTime(driverTripData);
+
+        if (driverTripDateTime == null) {
+          continue;
+        }
+
+        if (!driverTripDateTime.isAfter(now)) {
+          continue;
+        }
+
+        if (_isSameMinute(driverTripDateTime, selectedTripDateTime)) {
+          throw BookingException(
+            'driver-conflict-same-time',
+            _localizedMessage(
+              normalizedLanguage,
+              'You cannot book another trip because you’re already a driver at this time.',
+              'لا يمكنك الحجز لأنك سائق في رحلة بنفس الوقت.',
+            ),
+          );
+        }
+      }
+
       await _firestore.runTransaction((Transaction transaction) async {
         final DocumentSnapshot<Map<String, dynamic>> tripSnapshot =
             await transaction.get(tripRef);
@@ -57,7 +258,11 @@ class BookingService {
         if (driverId.isNotEmpty && driverId == userId) {
           throw BookingException(
             'driver-booking',
-            'لا يمكنك حجز رحلتك الخاصة.',
+            _localizedMessage(
+              normalizedLanguage,
+              'You cannot book your own trip.',
+              'لا يمكنك حجز رحلتك الخاصة.',
+            ),
           );
         }
 
@@ -280,6 +485,56 @@ class BookingService {
       return '';
     }
     return value.toString().trim();
+  }
+
+  static String _localizedMessage(
+    String languageCode,
+    String englishMessage,
+    String arabicMessage,
+  ) {
+    return languageCode == 'ar' ? arabicMessage : englishMessage;
+  }
+
+  static DateTime? _parseTripDateTime(Map<String, dynamic> data) {
+    final String dateString = _parseString(data['date']);
+    final String timeString = _parseString(data['time']);
+
+    if (dateString.isEmpty || timeString.isEmpty) {
+      return null;
+    }
+
+    final DateTime? parsedDate = DateTime.tryParse(dateString);
+    if (parsedDate == null) {
+      return null;
+    }
+
+    final List<String> timeParts = timeString.split(':');
+    if (timeParts.length < 2) {
+      return null;
+    }
+
+    final int? hour = int.tryParse(timeParts[0]);
+    final int? minute = int.tryParse(timeParts[1]);
+
+    if (hour == null || minute == null) {
+      return null;
+    }
+
+    return DateTime(
+      parsedDate.year,
+      parsedDate.month,
+      parsedDate.day,
+      hour.clamp(0, 23),
+      minute.clamp(0, 59),
+    );
+  }
+
+  static bool _isSameMinute(DateTime a, DateTime b) {
+    return a.year == b.year &&
+        a.month == b.month &&
+        a.day == b.day &&
+        a.hour == b.hour &&
+        a.minute == b.minute;
   }
 
   Future<String> _resolvePassengerName(String userId) async {
