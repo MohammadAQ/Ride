@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/api_service.dart';
+import '../services/driver_trip_validation_service.dart';
 import '../l10n/app_localizations.dart';
 
 class _CityOption {
@@ -62,6 +63,8 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   final TextEditingController _carModelController = TextEditingController();
   final TextEditingController _carColorController = TextEditingController();
   final ApiService _apiService = ApiService();
+  final DriverTripValidationService _validationService =
+      DriverTripValidationService();
 
   late final List<_CityOption> _cityOptions;
   late final bool _isEditing;
@@ -363,11 +366,16 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       return;
     }
 
-    setState(() {
-      _isSubmitting = true;
-    });
-
     try {
+      setState(() {
+        _isSubmitting = true;
+      });
+
+      final DateTime scheduledStart =
+          DateTime(date.year, date.month, date.day, time.hour, time.minute);
+      final String languageCode =
+          Localizations.localeOf(context).languageCode;
+
       // Fetch the driver's phone number from Firestore using their UID so we
       // can reuse the saved profile data instead of a manual input field.
       final String? driverPhoneNumber =
@@ -422,6 +430,16 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
           return;
         }
 
+        // Perform all driver-side business rule checks before persisting any
+        // updates to Firestore.
+        await _validationService.ensureCanEditTrip(
+          tripId: tripId,
+          driverId: user.uid,
+          updatedStartTime: scheduledStart,
+          updatedTotalSeats: totalSeats,
+          languageCode: languageCode,
+        );
+
         final updatedTrip = await _apiService.updateTrip(tripId, payload);
 
         if (!context.mounted) return;
@@ -436,6 +454,14 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
         Navigator.of(context).pop(updatedTrip);
       } else {
+        // Validate creation constraints (overlapping trips, daily limit,
+        // ongoing trips) before the Firestore write.
+        await _validationService.ensureCanCreateTrip(
+          driverId: user.uid,
+          startTime: scheduledStart,
+          languageCode: languageCode,
+        );
+
         await _apiService.createTrip(payload);
 
         if (!context.mounted) return;
@@ -470,6 +496,14 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
           Navigator.of(context).pop();
         }
       }
+    } on TripValidationException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
     } on ApiException catch (error) {
       if (!context.mounted) return;
       final baseMessage = context.translate(

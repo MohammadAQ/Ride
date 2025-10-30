@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
+import '../services/driver_trip_validation_service.dart';
 import 'create_trip_screen.dart';
 import 'trip_dashboard_screen.dart';
 
@@ -19,6 +20,8 @@ class MyTripsScreen extends StatefulWidget {
 
 class _MyTripsScreenState extends State<MyTripsScreen> {
   final ApiService _apiService = ApiService();
+  final DriverTripValidationService _tripValidationService =
+      DriverTripValidationService();
   final List<Map<String, dynamic>> _trips = <Map<String, dynamic>>[];
   String? _nextCursor;
   bool _isLoading = false;
@@ -326,6 +329,16 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
     });
 
     try {
+      final String languageCode =
+          Localizations.localeOf(context).languageCode;
+
+      // Validate driver-side deletion rules (completed trips, booked passengers)
+      // before issuing the Firestore delete call.
+      await _tripValidationService.ensureCanDeleteTrip(
+        tripId: tripId,
+        languageCode: languageCode,
+      );
+
       await _apiService.deleteTrip(tripId);
 
       if (!mounted) {
@@ -360,6 +373,22 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
       });
 
       unawaited(_loadTrips(reset: true));
+    } on TripValidationException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        final index = _indexForTripId(tripId);
+        if (index != -1) {
+          _trips[index]['_isProcessing'] = false;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
     } on ApiException catch (error) {
       if (!mounted) {
         return;
