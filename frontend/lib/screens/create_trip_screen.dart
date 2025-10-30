@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -60,7 +61,6 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   final TextEditingController _priceController = TextEditingController();
   final TextEditingController _carModelController = TextEditingController();
   final TextEditingController _carColorController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
   final ApiService _apiService = ApiService();
 
   late final List<_CityOption> _cityOptions;
@@ -92,7 +92,6 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     _priceController.dispose();
     _carModelController.dispose();
     _carColorController.dispose();
-    _phoneController.dispose();
     super.dispose();
   }
 
@@ -193,11 +192,6 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     final carColor = _stringOrNull(trip['carColor']);
     if (carColor != null) {
       _carColorController.text = carColor;
-    }
-
-    final phoneNumber = _stringOrNull(trip['phoneNumber']);
-    if (phoneNumber != null) {
-      _phoneController.text = phoneNumber;
     }
 
     final dynamic totalSeatsValue = trip['totalSeats'];
@@ -323,7 +317,6 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
         double.tryParse(_priceController.text.trim().replaceAll(',', '.'));
     final String carModel = _carModelController.text.trim();
     final String carColor = _carColorController.text.trim();
-    final String phoneNumber = _phoneController.text.trim();
     final int? totalSeats = int.tryParse(_seatsController.text.trim());
     if (price == null) {
       // Should not happen because validator already checks this, but guard anyway.
@@ -374,19 +367,47 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       _isSubmitting = true;
     });
 
-    final payload = <String, dynamic>{
-      'fromCity': fromCity,
-      'toCity': toCity,
-      'date': _formatDate(date),
-      'time': _formatTime(time),
-      'price': price,
-      'carModel': carModel,
-      'carColor': carColor,
-      'phoneNumber': phoneNumber,
-      'totalSeats': totalSeats,
-    };
-
     try {
+      // Fetch the driver's phone number from Firestore using their UID so we
+      // can reuse the saved profile data instead of a manual input field.
+      final String? driverPhoneNumber =
+          await _fetchDriverPhoneNumber(user.uid);
+      if (driverPhoneNumber == null) {
+        if (!context.mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (BuildContext dialogContext) {
+            return AlertDialog(
+              title: const Text('Missing phone number'),
+              content: const Text(
+                'You need to add your phone number in your profile before creating a trip.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
+        );
+        return;
+      }
+
+      final payload = <String, dynamic>{
+        'fromCity': fromCity,
+        'toCity': toCity,
+        'date': _formatDate(date),
+        'time': _formatTime(time),
+        'price': price,
+        'carModel': carModel,
+        'carColor': carColor,
+        // Add the driver's saved phone number so the trip document links back
+        // to the contact details stored in their Firestore profile.
+        'phoneNumber': driverPhoneNumber,
+        'totalSeats': totalSeats,
+      };
+
       if (_isEditing) {
         final tripId = _tripId;
         if (tripId == null || tripId.isEmpty) {
@@ -441,7 +462,6 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
         _priceController.clear();
         _carModelController.clear();
         _carColorController.clear();
-        _phoneController.clear();
 
         await Future<void>.delayed(const Duration(milliseconds: 300));
         if (!context.mounted) return;
@@ -482,6 +502,32 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
         _isSubmitting = false;
       });
     }
+  }
+
+  Future<String?> _fetchDriverPhoneNumber(String userId) async {
+    final String trimmedId = userId.trim();
+    if (trimmedId.isEmpty) {
+      return null;
+    }
+
+    // Retrieve the driver's persisted phone number from Firestore so we can
+    // reuse the same contact info when creating trip documents.
+    final DocumentSnapshot<Map<String, dynamic>> snapshot = await FirebaseFirestore
+        .instance
+        .collection('users')
+        .doc(trimmedId)
+        .get();
+
+    if (!snapshot.exists) {
+      return null;
+    }
+
+    final Map<String, dynamic>? data = snapshot.data();
+    if (data == null) {
+      return null;
+    }
+
+    return _stringOrNull(data['phoneNumber']);
   }
 
   Widget _buildBody() {
@@ -791,34 +837,6 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                             if (value == null || value.trim().isEmpty) {
                               return context
                                   .translate('create_trip_car_color_validation');
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _phoneController,
-                          keyboardType: TextInputType.phone,
-                          decoration: InputDecoration(
-                            labelText:
-                                context.translate('create_trip_phone_label'),
-                            hintText: context.translate('create_trip_phone_hint'),
-                            border: const OutlineInputBorder(),
-                            prefixIcon: const Padding(
-                              padding: EdgeInsetsDirectional.only(start: 12, end: 8),
-                              child: Text('📞'),
-                            ),
-                            prefixIconConstraints:
-                                const BoxConstraints(minWidth: 0, minHeight: 0),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return context
-                                  .translate('create_trip_phone_validation_required');
-                            }
-                            if (value.trim().length < 6) {
-                              return context
-                                  .translate('create_trip_phone_validation_invalid');
                             }
                             return null;
                           },
