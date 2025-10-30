@@ -85,7 +85,8 @@ class _SplashScreenState extends State<SplashScreen>
               ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final dimension = constraints.maxWidth.clamp(120, 260);
+                  final double dimension =
+                      constraints.maxWidth.clamp(120.0, 260.0);
                   return Image.asset(
                     'assets/images/ride_logo.png',
                     width: dimension,
