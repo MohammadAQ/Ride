@@ -35,6 +35,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isSubmitting = true);
 
+    UserCredential? userCredential;
+    DocumentReference<Map<String, dynamic>>? phoneNumberReservationRef;
+    bool phoneNumberReserved = false;
+
     try {
       final String trimmedPhone = _phoneController.text.trim();
 
@@ -58,8 +62,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         return;
       }
 
-      final userCredential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(
+      userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
@@ -71,7 +74,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final User? user = userCredential.user;
 
       if (user != null) {
-        // Save the newly registered user's profile, including the verified phone number, to Firestore.
+        final CollectionReference<Map<String, dynamic>> phoneNumbersCollection =
+            FirebaseFirestore.instance.collection('phoneNumbers');
+        phoneNumberReservationRef = phoneNumbersCollection.doc(trimmedPhone);
+
+        // Reserve the phone number document before writing the user profile. Using
+        // the phone number as the document ID makes the transaction fail if
+        // another user claimed it first, preventing duplicates even under race
+        // conditions.
+        await FirebaseFirestore.instance.runTransaction((transaction) async {
+          final DocumentSnapshot<Map<String, dynamic>> snapshot =
+              await transaction.get(phoneNumberReservationRef!);
+          if (snapshot.exists) {
+            throw FirebaseException(
+              plugin: 'cloud_firestore',
+              code: 'already-exists',
+              message: 'Phone number already reserved.',
+            );
+          }
+
+          transaction.set(
+            phoneNumberReservationRef!,
+            <String, dynamic>{'userId': user.uid},
+          );
+        });
+        phoneNumberReserved = true;
+
+        // Save the newly registered user's profile, including the verified phone
+        // number, to Firestore. Because the phone number is reserved in its own
+        // collection, we have a durable guarantee that no two profiles share it.
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
           <String, dynamic>{
             'displayName': _fullNameController.text.trim(),
@@ -90,6 +121,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
         MaterialPageRoute(builder: (_) => const MainScreen()),
         (route) => false,
       );
+    } on FirebaseException catch (e) {
+      if (userCredential?.user != null) {
+        await _rollbackFailedRegistration(
+          userCredential!.user!,
+          phoneNumberRef: phoneNumberReservationRef,
+          phoneNumberReserved: phoneNumberReserved,
+        );
+      }
+
+      String message = 'Something went wrong. Please try again later.';
+      if (e.plugin == 'cloud_firestore' && e.code == 'already-exists') {
+        message = 'This phone number is already registered.';
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     } on FirebaseAuthException catch (e) {
       var message = 'Unable to register. Please try again.';
       if (e.code == 'email-already-in-use') {
@@ -109,6 +162,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
       }
     } catch (_) {
+      if (userCredential?.user != null) {
+        await _rollbackFailedRegistration(
+          userCredential!.user!,
+          phoneNumberRef: phoneNumberReservationRef,
+          phoneNumberReserved: phoneNumberReserved,
+        );
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -155,6 +215,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return 'Password must be at least 6 characters.';
     }
     return null;
+  }
+
+  Future<void> _rollbackFailedRegistration(
+    User user, {
+    DocumentReference<Map<String, dynamic>>? phoneNumberRef,
+    required bool phoneNumberReserved,
+  }) async {
+    if (phoneNumberReserved && phoneNumberRef != null) {
+      try {
+        await phoneNumberRef.delete();
+      } catch (_) {
+        // Ignore cleanup failures; the caller will surface the original error.
+      }
+    }
+    try {
+      await user.delete();
+    } catch (_) {
+      // The user might have already been deleted or require re-authentication.
+    }
   }
 
   @override
