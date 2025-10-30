@@ -82,7 +82,11 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Image.asset('assets/logo.png', height: 90),
+                  Image.asset(
+                    'assets/images/ride_logo.png',
+                    height: 100,
+                    filterQuality: FilterQuality.high,
+                  ),
                   const SizedBox(height: 15),
                   const Text(
                     'Share a Ride',
