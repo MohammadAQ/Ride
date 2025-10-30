@@ -35,6 +35,8 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     'الخليل',
   ];
 
+  static const List<int> _seatOptions = <int>[1, 2, 3, 4, 5, 6];
+
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _dateController = TextEditingController();
   final TextEditingController _timeController = TextEditingController();
@@ -52,6 +54,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   String? _toCity;
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
+  int? _selectedSeats;
   bool _isSubmitting = false;
 
   @override
@@ -62,6 +65,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     if (_isEditing && widget.initialTripData != null) {
       _initialiseFromTrip(widget.initialTripData!);
     }
+    _syncSelectedSeatsFromController();
   }
 
   @override
@@ -193,6 +197,16 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       if (seatsText != null) {
         _seatsController.text = seatsText;
       }
+    }
+    _syncSelectedSeatsFromController();
+  }
+
+  void _syncSelectedSeatsFromController() {
+    final parsed = int.tryParse(_seatsController.text);
+    if (parsed != null && _seatOptions.contains(parsed)) {
+      _selectedSeats = parsed;
+    } else {
+      _selectedSeats = null;
     }
   }
 
@@ -396,6 +410,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
         _dateController.clear();
         _timeController.clear();
         _seatsController.clear();
+        _selectedSeats = null;
         _priceController.clear();
         _carModelController.clear();
         _carColorController.clear();
@@ -600,15 +615,26 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                           },
                         ),
                         const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _seatsController,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: <TextInputFormatter>[
-                            FilteringTextInputFormatter.digitsOnly,
-                          ],
+                        // Dropdown for selecting available seats (1-6) while keeping
+                        // compatibility with the existing _seatsController used for
+                        // Firestore integration.
+                        DropdownButtonFormField<int>(
+                          value: _selectedSeats,
+                          isExpanded: true,
+                          items: _seatOptions
+                              .map(
+                                (seat) => DropdownMenuItem<int>(
+                                  value: seat,
+                                  child: Align(
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: Text(seat.toString()),
+                                  ),
+                                ),
+                              )
+                              .toList(),
                           decoration: const InputDecoration(
-                            labelText: 'عدد المقاعد المتاحة',
-                            hintText: 'أدخل عدد المقاعد في السيارة',
+                            labelText: 'Available Seats',
+                            hintText: 'Select number of seats',
                             border: OutlineInputBorder(),
                             prefixIcon: Padding(
                               padding: EdgeInsetsDirectional.only(start: 12, end: 8),
@@ -616,13 +642,16 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                             ),
                             prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
                           ),
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedSeats = value;
+                              _seatsController.text =
+                                  value != null ? value.toString() : '';
+                            });
+                          },
                           validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'يرجى إدخال عدد المقاعد.';
-                            }
-                            final int? seats = int.tryParse(value.trim());
-                            if (seats == null || seats <= 0) {
-                              return 'أدخل رقمًا صحيحًا أكبر من صفر';
+                            if (value == null) {
+                              return 'يرجى اختيار عدد المقاعد.';
                             }
                             return null;
                           },
