@@ -65,7 +65,7 @@ class UserProfile {
       id: id,
       displayName: _resolveDisplayName(data),
       email: null,
-      phone: sanitizeOptionalText(data['phone']),
+      phone: sanitizeOptionalText(data['phoneNumber'] ?? data['phone']),
       photoUrl: _sanitizeUrl(data['photoUrl']),
       tripCount: _toInt(data['tripCount'] ?? data['tripsCount']),
       reviewsCount: _toInt(data['reviewsCount']),
