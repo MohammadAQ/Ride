@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:ride/l10n/app_localizations.dart';
@@ -681,7 +682,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
           createdAt: createdAt,
         );
 
-        Widget card = MyTripCard(
+        final Widget baseCard = MyTripCard(
           fromCity: fromCity,
           toCity: toCity,
           tripDate: dateText,
@@ -695,6 +696,53 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
           textDirection: textDirection,
           onLongPress: isProcessing ? null : () => _showTripOptions(data),
           onTap: () => _handleViewTripDetails(detailsArgs),
+        );
+
+        Widget card = Directionality(
+          textDirection: TextDirection.rtl,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              baseCard,
+              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: FirebaseFirestore.instance
+                    .collection('ride_requests')
+                    .where('ride_id', isEqualTo: tripId)
+                    .where('status', isEqualTo: 'pending')
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const SizedBox.shrink();
+                  }
+
+                  final int count = snapshot.data!.docs.length;
+                  if (count == 0) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return Positioned(
+                    right: 10,
+                    top: 10,
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: const BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '$count',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
         );
 
         if (isProcessing) {
