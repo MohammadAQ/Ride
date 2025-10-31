@@ -486,6 +486,10 @@ class _BookingCardState extends State<_BookingCard> {
         text = 'تم رفض الطلب ❌ – السبب: $sanitizedReason';
         color = Colors.red.shade600;
         break;
+      case RideRequestStatus.canceledByPassenger:
+        text = 'تم إلغاء الطلب من قبلكم';
+        color = Colors.grey.shade600;
+        break;
     }
 
     return Align(

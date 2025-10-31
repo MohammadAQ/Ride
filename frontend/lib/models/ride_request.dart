@@ -4,6 +4,7 @@ enum RideRequestStatus {
   pending,
   accepted,
   rejected,
+  canceledByPassenger,
 }
 
 class RideRequest {
@@ -75,6 +76,8 @@ class RideRequest {
         return RideRequestStatus.accepted;
       case 'rejected':
         return RideRequestStatus.rejected;
+      case 'canceled_by_passenger':
+        return RideRequestStatus.canceledByPassenger;
       case 'pending':
       default:
         return RideRequestStatus.pending;

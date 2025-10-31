@@ -77,6 +77,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
   bool _initialLoading = true;
   String? _errorMessage;
   final Set<String> _bookingInProgress = <String>{};
+  final Set<String> _cancellationInProgress = <String>{};
   User? _currentUser;
   StreamSubscription<User?>? _authSubscription;
   StreamSubscription<List<RideRequest>>? _rideRequestsSubscription;
@@ -193,9 +194,11 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       if (mounted) {
         setState(() {
           _passengerRequests = <String, RideRequest>{};
+          _cancellationInProgress.clear();
         });
       } else {
         _passengerRequests = <String, RideRequest>{};
+        _cancellationInProgress.clear();
       }
       return;
     }
@@ -221,6 +224,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       }
       setState(() {
         _passengerRequests = <String, RideRequest>{};
+        _cancellationInProgress.clear();
       });
     });
   }
@@ -256,6 +260,20 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
         const SnackBar(
           content: Text('تعذر تحديد السائق لهذه الرحلة.'),
           backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    final RideRequest? existingRequest = _passengerRequests[tripId];
+    if (existingRequest != null &&
+        existingRequest.status == RideRequestStatus.pending) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لديك طلب قيد الانتظار لهذه الرحلة.'),
         ),
       );
       return;
@@ -319,6 +337,94 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       }
       setState(() {
         _bookingInProgress.remove(tripId);
+      });
+    }
+  }
+
+  Future<void> _cancelRideRequest({
+    required String tripId,
+  }) async {
+    final User? user = _currentUser ?? FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('يرجى تسجيل الدخول لإدارة الطلبات.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    if (tripId.isEmpty || _cancellationInProgress.contains(tripId)) {
+      return;
+    }
+
+    setState(() {
+      _cancellationInProgress.add(tripId);
+    });
+
+    try {
+      await _rideRequestService.cancelPendingRequest(
+        rideId: tripId,
+        passengerId: user.uid,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        final RideRequest? existing = _passengerRequests[tripId];
+        if (existing != null) {
+          final Map<String, RideRequest> updated =
+              Map<String, RideRequest>.from(_passengerRequests);
+          updated[tripId] = existing.copyWith(
+            status: RideRequestStatus.canceledByPassenger,
+            reason: 'Canceled by passenger',
+          );
+          _passengerRequests = updated;
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم إلغاء الطلب بنجاح.'),
+        ),
+      );
+    } on FirebaseException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final String errorMessage =
+          (error.message?.isNotEmpty ?? false)
+              ? error.message!
+              : 'تعذر إلغاء الطلب. حاول مرة أخرى لاحقًا.';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر إلغاء الطلب. حاول مرة أخرى لاحقًا.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _cancellationInProgress.remove(tripId);
       });
     }
   }
@@ -526,12 +632,28 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
               final _SeatAvailability availability = snapshotData != null
                   ? _extractSeatAvailability(snapshotData)
                   : initialAvailability;
-              final bool isBooked = _currentUser != null &&
-                  availability.bookedUsers.contains(_currentUser!.uid);
+              final RideRequest? request = _passengerRequests[tripId];
+              final RideRequestStatus? requestStatus = request?.status;
+              final bool isPendingRequest =
+                  requestStatus == RideRequestStatus.pending;
+              final bool isRequestAccepted =
+                  requestStatus == RideRequestStatus.accepted;
+              bool isBooked = false;
+              if (_currentUser != null) {
+                final bool isInBookedList =
+                    availability.bookedUsers.contains(_currentUser!.uid);
+                isBooked = isInBookedList || isRequestAccepted;
+              }
               final bool requiresLogin = _currentUser == null;
               final bool isSoldOut = availability.availableSeats <= 0;
               final bool canBook =
-                  !isDriver && !isBooked && !isSoldOut && !requiresLogin;
+                  !isDriver &&
+                  !isBooked &&
+                  !isSoldOut &&
+                  !requiresLogin &&
+                  !isPendingRequest;
+              final bool isCancelling =
+                  _cancellationInProgress.contains(tripId);
 
               return _buildSeatInfoSection(
                 context: modalContext,
@@ -549,6 +671,12 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                         );
                       }
                     : null,
+                requestStatus: requestStatus,
+                requestReason: request?.reason,
+                onCancelRequest: isPendingRequest
+                    ? () => _cancelRideRequest(tripId: tripId)
+                    : null,
+                isCancellingRequest: isCancelling,
               );
             },
           );
@@ -1064,7 +1192,6 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                 : (data['notes'] ?? '').toString(),
             onTap: () => _showTripDetails(context, data, tripId),
             onBook: null,
-            hasPendingRequest: false,
           );
         } else {
           cardContent = StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -1080,13 +1207,16 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                   : initialAvailability;
               final RideRequest? request = _passengerRequests[tripId];
               final RideRequestStatus? requestStatus = request?.status;
-              final bool hasPendingRequest =
+              final bool isPendingRequest =
                   requestStatus == RideRequestStatus.pending;
               final bool isRequestAccepted =
                   requestStatus == RideRequestStatus.accepted;
-              final bool isBooked = _currentUser != null &&
-                      availability.bookedUsers.contains(_currentUser!.uid) ||
-                  isRequestAccepted;
+              bool isBooked = false;
+              if (_currentUser != null) {
+                final bool isInBookedList =
+                    availability.bookedUsers.contains(_currentUser!.uid);
+                isBooked = isInBookedList || isRequestAccepted;
+              }
               final bool isSoldOut = availability.availableSeats <= 0;
               final bool requiresLogin = _currentUser == null;
               final bool canBook =
@@ -1094,7 +1224,9 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                   !isBooked &&
                   !isSoldOut &&
                   !requiresLogin &&
-                  !hasPendingRequest;
+                  !isPendingRequest;
+              final bool isCancelling =
+                  _cancellationInProgress.contains(tripId);
 
               return TripCard(
                 fromCity: fromCity.isEmpty ? 'غير متوفر' : fromCity,
@@ -1120,8 +1252,12 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                           driverId: driverId,
                         )
                     : null,
-                hasPendingRequest: hasPendingRequest,
-                pendingRequestMessage: 'تم إرسال طلبك للسائق… بانتظار الموافقة',
+                requestStatus: requestStatus,
+                requestReason: request?.reason,
+                onCancelRequest: isPendingRequest
+                    ? () => _cancelRideRequest(tripId: tripId)
+                    : null,
+                isCancellingRequest: isCancelling,
               );
             },
           );
@@ -1236,6 +1372,10 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     required bool requiresLogin,
     required bool isBooking,
     required VoidCallback? onBook,
+    RideRequestStatus? requestStatus,
+    String? requestReason,
+    VoidCallback? onCancelRequest,
+    bool isCancellingRequest = false,
   }) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colorScheme = theme.colorScheme;
@@ -1244,8 +1384,61 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
     final bool isSoldOut = availability.availableSeats <= 0;
     final bool bookingUnavailable =
         onBook == null && !isDriver && !isBooked && !requiresLogin && !isSoldOut;
+    final RideRequestStatus? status = requestStatus;
+    final bool isPendingRequest = status == RideRequestStatus.pending;
+    final bool isAcceptedRequest = status == RideRequestStatus.accepted;
+    final bool isRejectedRequest = status == RideRequestStatus.rejected;
 
-    Widget action;
+    final ButtonStyle purpleButtonStyle = FilledButton.styleFrom(
+      backgroundColor: const Color(0xFF6A1B9A),
+      foregroundColor: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+    );
+
+    final ButtonStyle fullButtonStyle = FilledButton.styleFrom(
+      backgroundColor: Colors.grey.shade400,
+      foregroundColor: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+    ).copyWith(
+      backgroundColor: MaterialStateProperty.resolveWith(
+        (Set<MaterialState> states) => Colors.grey.shade400,
+      ),
+      foregroundColor: MaterialStateProperty.resolveWith(
+        (Set<MaterialState> states) => Colors.white.withOpacity(
+          states.contains(MaterialState.disabled) ? 0.9 : 1,
+        ),
+      ),
+    );
+
+    Widget buildBookingButton() {
+      if (isSoldOut) {
+        return FilledButton.icon(
+          onPressed: null,
+          style: fullButtonStyle,
+          icon: const Icon(Icons.event_busy),
+          label: Text(isRtl ? 'مكتملة' : 'Full'),
+        );
+      }
+
+      final String bookingLabel = isRtl ? 'احجز الآن' : 'Book Now';
+      final String bookingInProgressLabel =
+          isRtl ? 'جاري الحجز...' : 'Booking...';
+
+      return FilledButton.icon(
+        onPressed: (isBooking || onBook == null) ? null : onBook,
+        style: purpleButtonStyle,
+        icon: isBooking
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.event_seat),
+        label: Text(isBooking ? bookingInProgressLabel : bookingLabel),
+      );
+    }
+
+    late final Widget action;
 
     if (isDriver) {
       action = _StatusBadge(
@@ -1253,6 +1446,69 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
         icon: Icons.directions_car_filled,
         text: 'هذه رحلتك',
       );
+    } else if (isPendingRequest) {
+      final String cancelLabel = isCancellingRequest
+          ? (isRtl ? 'جاري الإلغاء...' : 'Cancelling...')
+          : (isRtl ? 'إلغاء الطلب' : 'Cancel Request');
+
+      action = Column(
+        crossAxisAlignment:
+            isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          _StatusBadge(
+            color: Colors.amber.shade700,
+            icon: Icons.hourglass_top,
+            text: 'بانتظار موافقة السائق…',
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: (isCancellingRequest || onCancelRequest == null)
+                ? null
+                : onCancelRequest,
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red.shade600,
+            ),
+            icon: isCancellingRequest
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.cancel_outlined),
+            label: Text(cancelLabel),
+          ),
+        ],
+      );
+    } else if (isAcceptedRequest) {
+      action = _StatusBadge(
+        color: Colors.green.shade700,
+        icon: Icons.check_circle_outline,
+        text: 'تمت الموافقة ✅',
+      );
+    } else if (isRejectedRequest) {
+      final String sanitizedReason =
+          (requestReason?.trim().isNotEmpty ?? false)
+              ? requestReason!.trim()
+              : 'غير مذكور';
+      final Widget rejectionChip = _RejectionStatusBadge(
+        text: 'تم رفض الطلب ❌ – السبب: $sanitizedReason',
+      );
+
+      if (onBook != null || isSoldOut) {
+        action = Column(
+          crossAxisAlignment:
+              isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            rejectionChip,
+            const SizedBox(height: 8),
+            buildBookingButton(),
+          ],
+        );
+      } else {
+        action = rejectionChip;
+      }
     } else if (isBooked) {
       action = _StatusBadge(
         color: Colors.green.shade700,
@@ -1272,52 +1528,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
         text: 'الحجز غير متاح لهذه الرحلة',
       );
     } else {
-      final ButtonStyle purpleButtonStyle = FilledButton.styleFrom(
-        backgroundColor: const Color(0xFF6A1B9A),
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      );
-
-      final ButtonStyle fullButtonStyle = FilledButton.styleFrom(
-        backgroundColor: Colors.grey.shade400,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      ).copyWith(
-        backgroundColor: MaterialStateProperty.resolveWith(
-          (Set<MaterialState> states) => Colors.grey.shade400,
-        ),
-        foregroundColor: MaterialStateProperty.resolveWith(
-          (Set<MaterialState> states) => Colors.white.withOpacity(
-            states.contains(MaterialState.disabled) ? 0.9 : 1,
-          ),
-        ),
-      );
-
-      if (isSoldOut) {
-        action = FilledButton.icon(
-          onPressed: null,
-          style: fullButtonStyle,
-          icon: const Icon(Icons.event_busy),
-          label: Text(isRtl ? 'مكتملة' : 'Full'),
-        );
-      } else {
-        final String bookingLabel = isRtl ? 'احجز الآن' : 'Book Now';
-        final String bookingInProgressLabel =
-            isRtl ? 'جاري الحجز...' : 'Booking...';
-
-        action = FilledButton.icon(
-          onPressed: isBooking ? null : onBook,
-          style: purpleButtonStyle,
-          icon: isBooking
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.event_seat),
-          label: Text(isBooking ? bookingInProgressLabel : bookingLabel),
-        );
-      }
+      action = buildBookingButton();
     }
 
     final String seatLabel = isRtl
@@ -1489,8 +1700,10 @@ class TripCard extends StatelessWidget {
     this.notes,
     this.onTap,
     this.onBook,
-    this.hasPendingRequest = false,
-    this.pendingRequestMessage,
+    this.requestStatus,
+    this.requestReason,
+    this.onCancelRequest,
+    this.isCancellingRequest = false,
   });
 
   final String fromCity;
@@ -1509,8 +1722,10 @@ class TripCard extends StatelessWidget {
   final String? notes;
   final VoidCallback? onTap;
   final VoidCallback? onBook;
-  final bool hasPendingRequest;
-  final String? pendingRequestMessage;
+  final RideRequestStatus? requestStatus;
+  final String? requestReason;
+  final VoidCallback? onCancelRequest;
+  final bool isCancellingRequest;
 
   @override
   Widget build(BuildContext context) {
@@ -1759,29 +1974,16 @@ class TripCard extends StatelessWidget {
       );
     }
 
-    if (hasPendingRequest) {
-      return _StatusBadge(
-        color: Colors.amber.shade700,
-        icon: Icons.hourglass_top,
-        text: pendingRequestMessage ?? 'تم إرسال طلبك للسائق… بانتظار الموافقة',
-      );
-    }
-
-    if (isBooked) {
-      return _StatusBadge(
-        color: Colors.green.shade700,
-        icon: Icons.check_circle_outline,
-        text: 'تم تأكيد حجزك',
-      );
-    }
-
-    if (requiresLogin) {
-      return _StatusBadge(
-        color: colorScheme.primary,
-        icon: Icons.lock_outline,
-        text: 'سجّل الدخول للحجز',
-      );
-    }
+    final RideRequestStatus? status = requestStatus;
+    final bool isPendingRequest = status == RideRequestStatus.pending;
+    final bool isAcceptedRequest = status == RideRequestStatus.accepted;
+    final bool isRejectedRequest = status == RideRequestStatus.rejected;
+    final bool bookingUnavailable = onBook == null &&
+        !isOwnTrip &&
+        !isBooked &&
+        !requiresLogin &&
+        !isSoldOut &&
+        !isPendingRequest;
 
     final ButtonStyle purpleButtonStyle = FilledButton.styleFrom(
       backgroundColor: const Color(0xFF6A1B9A),
@@ -1804,30 +2006,128 @@ class TripCard extends StatelessWidget {
       ),
     );
 
-    if (isSoldOut) {
+    Widget buildBookingButton() {
+      if (isSoldOut) {
+        return FilledButton.icon(
+          onPressed: null,
+          style: fullButtonStyle,
+          icon: const Icon(Icons.event_busy),
+          label: Text(isRtl ? 'مكتملة' : 'Full'),
+        );
+      }
+
+      final String bookingLabel = isRtl ? 'احجز الآن' : 'Book Now';
+      final String bookingInProgressLabel =
+          isRtl ? 'جاري الحجز...' : 'Booking...';
+
       return FilledButton.icon(
-        onPressed: null,
-        style: fullButtonStyle,
-        icon: const Icon(Icons.event_busy),
-        label: Text(isRtl ? 'مكتملة' : 'Full'),
+        onPressed: (isBooking || onBook == null) ? null : onBook,
+        style: purpleButtonStyle,
+        icon: isBooking
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.event_seat),
+        label: Text(isBooking ? bookingInProgressLabel : bookingLabel),
       );
     }
 
-    final String bookingLabel = isRtl ? 'احجز الآن' : 'Book Now';
-    final String bookingInProgressLabel = isRtl ? 'جاري الحجز...' : 'Booking...';
+    if (isPendingRequest) {
+      final String cancelLabel = isCancellingRequest
+          ? (isRtl ? 'جاري الإلغاء...' : 'Cancelling...')
+          : (isRtl ? 'إلغاء الطلب' : 'Cancel Request');
 
-    return FilledButton.icon(
-      onPressed: isBooking ? null : onBook,
-      style: purpleButtonStyle,
-      icon: isBooking
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.event_seat),
-      label: Text(isBooking ? bookingInProgressLabel : bookingLabel),
-    );
+      return Column(
+        crossAxisAlignment:
+            isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          _StatusBadge(
+            color: Colors.amber.shade700,
+            icon: Icons.hourglass_top,
+            text: 'تم إرسال طلبك للسائق… بانتظار الموافقة',
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: (isCancellingRequest || onCancelRequest == null)
+                ? null
+                : onCancelRequest,
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red.shade600,
+            ),
+            icon: isCancellingRequest
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.cancel_outlined),
+            label: Text(cancelLabel),
+          ),
+        ],
+      );
+    }
+
+    if (isAcceptedRequest) {
+      return _StatusBadge(
+        color: Colors.green.shade700,
+        icon: Icons.check_circle_outline,
+        text: 'تمت الموافقة ✅',
+      );
+    }
+
+    if (isBooked) {
+      return _StatusBadge(
+        color: Colors.green.shade700,
+        icon: Icons.check_circle_outline,
+        text: 'تم تأكيد حجزك',
+      );
+    }
+
+    if (requiresLogin) {
+      return _StatusBadge(
+        color: colorScheme.primary,
+        icon: Icons.lock_outline,
+        text: 'سجّل الدخول للحجز',
+      );
+    }
+
+    if (isRejectedRequest) {
+      final String sanitizedReason =
+          (requestReason?.trim().isNotEmpty ?? false)
+              ? requestReason!.trim()
+              : 'غير مذكور';
+      final Widget rejectionChip = _RejectionStatusBadge(
+        text: 'تم رفض الطلب ❌ – السبب: $sanitizedReason',
+      );
+
+      if (onBook != null || isSoldOut) {
+        return Column(
+          crossAxisAlignment:
+              isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            rejectionChip,
+            const SizedBox(height: 8),
+            buildBookingButton(),
+          ],
+        );
+      }
+
+      return rejectionChip;
+    }
+
+    if (bookingUnavailable) {
+      return _StatusBadge(
+        color: colorScheme.onSurface.withOpacity(0.7),
+        icon: Icons.info_outline,
+        text: 'الحجز غير متاح لهذه الرحلة',
+      );
+    }
+
+    return buildBookingButton();
   }
 }
 
@@ -1845,6 +2145,46 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final TextDirection direction = Directionality.of(context);
+    final bool isRtl = direction == TextDirection.rtl;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          Icon(icon, color: color, size: 18),
+          Text(
+            text,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+            textAlign: isRtl ? TextAlign.right : TextAlign.left,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RejectionStatusBadge extends StatelessWidget {
+  const _RejectionStatusBadge({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final TextDirection direction = Directionality.of(context);
+    final bool isRtl = direction == TextDirection.rtl;
+    final Color color = Colors.red.shade600;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -1853,15 +2193,20 @@ class _StatusBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 18),
+        mainAxisSize: MainAxisSize.max,
+        textDirection: direction,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(Icons.cancel_outlined, color: color, size: 18),
           const SizedBox(width: 8),
-          Text(
-            text,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w600,
+          Expanded(
+            child: Text(
+              text,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: isRtl ? TextAlign.right : TextAlign.left,
             ),
           ),
         ],
