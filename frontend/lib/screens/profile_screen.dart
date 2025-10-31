@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -29,6 +30,13 @@ class _ProfileStatistics {
   final bool hasRatingSamples;
 }
 
+class _CompletedRideSummary {
+  const _CompletedRideSummary({required this.rideId, required this.endTime});
+
+  final String rideId;
+  final DateTime endTime;
+}
+
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
     super.key,
@@ -52,12 +60,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isSendingTestNotification = false;
   String? _errorMessage;
   late final String _targetUserId;
+  bool _hasShownRatingDialog = false;
+  bool _isCheckingPendingRating = false;
 
   bool get _isCurrentUser {
     final User? currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return false;
     return widget.userId == null || widget.userId == currentUser.uid;
   }
+
+  static const Duration _ratingDelay = Duration(hours: 3);
 
   Future<_ProfileStatistics> _loadProfileStatistics(String userId) async {
     final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -392,6 +404,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _isLoading = false;
       });
       _storeProfileInCache(enrichedProfile);
+      unawaited(_refreshDriverAverageRating());
+      if (!_isCurrentUser) {
+        unawaited(_checkForPendingRating());
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -473,6 +489,515 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _refreshDriverAverageRating() async {
+    if (_targetUserId.isEmpty) {
+      return;
+    }
+
+    try {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await FirebaseFirestore
+          .instance
+          .collection('driver_ratings')
+          .where('driverId', isEqualTo: _targetUserId)
+          .get();
+
+      double totalRating = 0;
+      int ratingCount = 0;
+
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in snapshot.docs) {
+        final Map<String, dynamic> data = doc.data();
+        final double? value = _parseNumeric(data['rating']);
+        if (value != null) {
+          totalRating += value;
+          ratingCount += 1;
+        }
+      }
+
+      if (!mounted || _profile == null) {
+        return;
+      }
+
+      final double? average = ratingCount > 0 ? totalRating / ratingCount : null;
+
+      setState(() {
+        _profile = _profile!.copyWith(
+          rating: average,
+          reviewsCount: ratingCount > 0 ? ratingCount : null,
+        );
+      });
+
+      if (_profile != null) {
+        _storeProfileInCache(_profile!);
+      }
+    } catch (_) {
+      // Ignore rating refresh failures silently to avoid interrupting the UI.
+    }
+  }
+
+  Future<void> _checkForPendingRating() async {
+    if (_isCheckingPendingRating || _hasShownRatingDialog || _isCurrentUser || _profile == null) {
+      return;
+    }
+
+    final User? passenger = FirebaseAuth.instance.currentUser;
+    if (passenger == null || passenger.uid == _targetUserId) {
+      return;
+    }
+
+    _isCheckingPendingRating = true;
+
+    try {
+      final _CompletedRideSummary? ride =
+          await _findLatestCompletedRide(passengerId: passenger.uid);
+
+      if (ride == null) {
+        return;
+      }
+
+      final bool alreadyRated = await _hasPassengerRatedRide(
+        rideId: ride.rideId,
+        passengerId: passenger.uid,
+      );
+
+      if (alreadyRated) {
+        return;
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      _hasShownRatingDialog = true;
+
+      final bool? submitted = await _showDriverRatingDialog(
+        driverName: _profile!.displayName,
+        rideId: ride.rideId,
+        passengerId: passenger.uid,
+      );
+
+      if (submitted == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم إرسال التقييم بنجاح ✅'),
+          ),
+        );
+      }
+    } catch (_) {
+      // Silently ignore failures.
+    } finally {
+      _isCheckingPendingRating = false;
+    }
+  }
+
+  Future<_CompletedRideSummary?> _findLatestCompletedRide({
+    required String passengerId,
+  }) async {
+    if (_targetUserId.isEmpty) {
+      return null;
+    }
+
+    try {
+      final QuerySnapshot<Map<String, dynamic>> bookingsSnapshot = await FirebaseFirestore
+          .instance
+          .collection('bookings')
+          .where('passengerId', isEqualTo: passengerId)
+          .where('driverId', isEqualTo: _targetUserId)
+          .get();
+
+      final DateTime now = DateTime.now();
+      _CompletedRideSummary? latest;
+
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in bookingsSnapshot.docs) {
+        final Map<String, dynamic> data = doc.data();
+        final String status = _safeString(data['status']).toLowerCase();
+        if (status == 'canceled') {
+          continue;
+        }
+
+        final String rideId = _resolveBookingTripId(doc, passengerId);
+        if (rideId.isEmpty) {
+          continue;
+        }
+
+        final DocumentSnapshot<Map<String, dynamic>> tripSnapshot = await FirebaseFirestore
+            .instance
+            .collection('trips')
+            .doc(rideId)
+            .get();
+
+        if (!tripSnapshot.exists) {
+          continue;
+        }
+
+        final Map<String, dynamic> tripData =
+            tripSnapshot.data() ?? <String, dynamic>{};
+        final DateTime? endTime = _extractTripEndTime(tripData);
+
+        if (endTime == null) {
+          continue;
+        }
+
+        if (!now.isAfter(endTime.add(_ratingDelay))) {
+          continue;
+        }
+
+        if (latest == null || endTime.isAfter(latest.endTime)) {
+          latest = _CompletedRideSummary(
+            rideId: tripSnapshot.id,
+            endTime: endTime,
+          );
+        }
+      }
+
+      return latest;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> _hasPassengerRatedRide({
+    required String rideId,
+    required String passengerId,
+  }) async {
+    try {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await FirebaseFirestore
+          .instance
+          .collection('driver_ratings')
+          .where('rideId', isEqualTo: rideId)
+          .where('passengerId', isEqualTo: passengerId)
+          .limit(1)
+          .get();
+      return snapshot.docs.isNotEmpty;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<bool?> _showDriverRatingDialog({
+    required String driverName,
+    required String rideId,
+    required String passengerId,
+  }) async {
+    final TextEditingController commentController = TextEditingController();
+    bool? result;
+
+    try {
+      result = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext dialogContext) {
+          double selectedRating = 0;
+          bool isSubmitting = false;
+
+          return StatefulBuilder(
+            builder: (BuildContext context, void Function(void Function()) setStateDialog) {
+              final ThemeData theme = Theme.of(context);
+
+              Widget buildStar(int index) {
+                final int starValue = index + 1;
+                final bool isActive = starValue <= selectedRating;
+                return IconButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () {
+                          setStateDialog(() {
+                            selectedRating = starValue.toDouble();
+                          });
+                        },
+                  icon: Icon(
+                    isActive ? Icons.star_rounded : Icons.star_border_rounded,
+                    color: isActive
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.outline,
+                    size: 32,
+                  ),
+                  tooltip: 'اختَر عدد النجوم',
+                );
+              }
+
+              return Directionality(
+                textDirection: Directionality.of(context),
+                child: AlertDialog(
+                  title: Text('قيّم السائق $driverName'),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        const Text('اختَر عدد النجوم'),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List<Widget>.generate(5, buildStar),
+                        ),
+                        const SizedBox(height: 20),
+                        TextField(
+                          controller: commentController,
+                          maxLines: 3,
+                          decoration: const InputDecoration(
+                            labelText: 'تعليق (اختياري)',
+                            border: OutlineInputBorder(),
+                          ),
+                          textDirection: Directionality.of(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: <Widget>[
+                    TextButton(
+                      onPressed: isSubmitting
+                          ? null
+                          : () {
+                              Navigator.of(dialogContext).pop(false);
+                            },
+                      child: const Text('لاحقاً'),
+                    ),
+                    FilledButton(
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              if (selectedRating <= 0) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(this.context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('الرجاء اختيار تقييم بالنجوم.'),
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
+
+                              setStateDialog(() {
+                                isSubmitting = true;
+                              });
+
+                              try {
+                                await _submitDriverRating(
+                                  rideId: rideId,
+                                  passengerId: passengerId,
+                                  rating: selectedRating,
+                                  comment: commentController.text.trim(),
+                                );
+                                if (!mounted) {
+                                  return;
+                                }
+                                Navigator.of(dialogContext).pop(true);
+                              } catch (_) {
+                                setStateDialog(() {
+                                  isSubmitting = false;
+                                });
+                                if (mounted) {
+                                  ScaffoldMessenger.of(this.context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('تعذّر إرسال التقييم. حاول مرة أخرى لاحقًا.'),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                      child: isSubmitting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('إرسال التقييم'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      commentController.dispose();
+    }
+
+    return result;
+  }
+
+  Future<void> _submitDriverRating({
+    required String rideId,
+    required String passengerId,
+    required double rating,
+    required String comment,
+  }) async {
+    final FirebaseFirestore firestore = FirebaseFirestore.instance;
+    await firestore.collection('driver_ratings').add(<String, dynamic>{
+      'rideId': rideId,
+      'driverId': _targetUserId,
+      'passengerId': passengerId,
+      'rating': rating,
+      'comment': comment,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    await _refreshDriverAverageRating();
+  }
+
+  String _resolveBookingTripId(
+    QueryDocumentSnapshot<Map<String, dynamic>> bookingDoc,
+    String passengerId,
+  ) {
+    final Map<String, dynamic> data = bookingDoc.data();
+    const List<String> keys = <String>['tripId', 'rideId', 'ride_id', 'trip_id'];
+
+    for (final String key in keys) {
+      final String value = _safeString(data[key]);
+      if (value.isNotEmpty) {
+        return value;
+      }
+    }
+
+    final Object? reference = data['tripRef'];
+    if (reference is DocumentReference) {
+      return reference.id;
+    }
+
+    final String docId = bookingDoc.id;
+    final String suffix = '_$passengerId';
+    if (docId.endsWith(suffix)) {
+      return docId.substring(0, docId.length - suffix.length);
+    }
+
+    return docId;
+  }
+
+  DateTime? _extractTripEndTime(Map<String, dynamic> data) {
+    final DateTime? start = _extractTripStartTime(data);
+
+    final dynamic explicitEnd =
+        data['endDateTime'] ?? data['estimatedArrivalTime'] ?? data['arrivalDateTime'];
+    if (explicitEnd is Timestamp) {
+      return explicitEnd.toDate();
+    }
+    if (explicitEnd is String) {
+      final DateTime? parsed = DateTime.tryParse(explicitEnd);
+      if (parsed != null) {
+        return parsed;
+      }
+    }
+
+    final dynamic endDateValue = data['endDate'] ?? data['arrivalDate'];
+    final dynamic endTimeValue = data['endTime'] ?? data['arrivalTime'];
+    DateTime? endDate;
+
+    if (endDateValue is Timestamp) {
+      endDate = endDateValue.toDate();
+    } else if (endDateValue is String) {
+      endDate = _tryParseDate(endDateValue);
+    }
+
+    if (endDate != null) {
+      if (endTimeValue is String) {
+        final List<String> parts = endTimeValue.split(':');
+        if (parts.length >= 2) {
+          final int? hour = int.tryParse(parts[0]);
+          final int? minute = int.tryParse(parts[1]);
+          if (hour != null && minute != null) {
+            return DateTime(endDate.year, endDate.month, endDate.day, hour, minute);
+          }
+        }
+      }
+      return DateTime(endDate.year, endDate.month, endDate.day, endDate.hour, endDate.minute);
+    }
+
+    final int durationMinutes = _parseIntFlexible(data['durationMinutes']);
+    if (durationMinutes > 0 && start != null) {
+      return start.add(Duration(minutes: durationMinutes));
+    }
+
+    final int estimatedDuration = _parseIntFlexible(data['estimatedDurationMinutes']);
+    if (estimatedDuration > 0 && start != null) {
+      return start.add(Duration(minutes: estimatedDuration));
+    }
+
+    if (start == null) {
+      return null;
+    }
+
+    return start.add(const Duration(hours: 3));
+  }
+
+  DateTime? _extractTripStartTime(Map<String, dynamic> data) {
+    final dynamic dateValue = data['date'];
+    final dynamic timeValue = data['time'];
+    DateTime? baseDate;
+
+    if (dateValue is Timestamp) {
+      baseDate = dateValue.toDate();
+    } else if (dateValue is String) {
+      baseDate = _tryParseDate(dateValue);
+    }
+
+    if (baseDate == null) {
+      return null;
+    }
+
+    if (timeValue is String) {
+      final List<String> parts = timeValue.split(':');
+      if (parts.length >= 2) {
+        final int? hour = int.tryParse(parts[0]);
+        final int? minute = int.tryParse(parts[1]);
+        if (hour != null && minute != null) {
+          return DateTime(baseDate.year, baseDate.month, baseDate.day, hour, minute);
+        }
+      }
+    }
+
+    return DateTime(
+      baseDate.year,
+      baseDate.month,
+      baseDate.day,
+      baseDate.hour,
+      baseDate.minute,
+    );
+  }
+
+  DateTime? _tryParseDate(String value) {
+    if (value.isEmpty) {
+      return null;
+    }
+
+    final DateTime? parsed = DateTime.tryParse(value);
+    if (parsed != null) {
+      return parsed;
+    }
+
+    final List<String> parts = value.split('-');
+    if (parts.length >= 3) {
+      final int? year = int.tryParse(parts[0]);
+      final int? month = int.tryParse(parts[1]);
+      final int? day = int.tryParse(parts[2]);
+      if (year != null && month != null && day != null) {
+        return DateTime(year, month, day);
+      }
+    }
+
+    return null;
+  }
+
+  int _parseIntFlexible(dynamic value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value is String) {
+      return int.tryParse(value) ?? 0;
+    }
+    return 0;
+  }
+
+  String _safeString(dynamic value) {
+    if (value == null) {
+      return '';
+    }
+    return value.toString().trim();
   }
 
   void _handleEditProfile() {
