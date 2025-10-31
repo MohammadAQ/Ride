@@ -11,7 +11,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 
 import '../firebase_options.dart';
-import '../screens/trip_dashboard_screen.dart';
+import '../screens/ride_details_screen.dart';
 
 /// Wires Firebase Cloud Messaging with local notifications across the app.
 ///
@@ -23,7 +23,7 @@ import '../screens/trip_dashboard_screen.dart';
 /// * Persists the device token in `users/{uid}.fcmTokens` so backend Cloud
 ///   Functions can fan-out messages.
 /// * Handles taps from background/terminated notifications via the data payload
-///   (`route`, `tripId`) and routes to the Trip Dashboard screen.
+///   (`route`, `tripId`) and routes to the Ride Details screen.
 ///
 /// Manual testing checklist:
 /// 1. Sign in → token is stored in Firestore under the user document.
@@ -235,7 +235,7 @@ class NotificationService {
 
       final Map<String, dynamic> data = snapshot.data() ?? <String, dynamic>{};
 
-      final TripDashboardArguments arguments = TripDashboardArguments(
+      final RideDetailsArguments arguments = RideDetailsArguments(
         tripId: tripId,
         fromCity: _asString(data['fromCity']),
         toCity: _asString(data['toCity']),
@@ -253,7 +253,7 @@ class NotificationService {
       navigator.push(
         MaterialPageRoute<Widget>(
           builder: (BuildContext context) =>
-              TripDashboardScreen(arguments: arguments),
+              RideDetailsScreen(arguments: arguments),
         ),
       );
     } catch (error, stackTrace) {
