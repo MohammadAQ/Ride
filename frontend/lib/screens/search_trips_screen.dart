@@ -2,15 +2,17 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:ride/models/ride_request.dart';
 import 'package:ride/models/user_profile.dart';
 import 'package:ride/widgets/user_profile_preview.dart';
 
 import '../services/api_service.dart';
-import '../services/booking_service.dart';
+import '../services/ride_request_service.dart';
 
 const MethodChannel _phoneLauncherChannel =
     MethodChannel('com.example.carpal_app/phone_launcher');
@@ -64,7 +66,7 @@ class SearchTripsScreen extends StatefulWidget {
 
 class _SearchTripsScreenState extends State<SearchTripsScreen> {
   final ApiService _apiService = ApiService();
-  final BookingService _bookingService = BookingService();
+  final RideRequestService _rideRequestService = RideRequestService();
   final List<Map<String, dynamic>> _trips = <Map<String, dynamic>>[];
   String? _selectedFromCity;
   String? _selectedToCity;
@@ -77,11 +79,14 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
   final Set<String> _bookingInProgress = <String>{};
   User? _currentUser;
   StreamSubscription<User?>? _authSubscription;
+  StreamSubscription<List<RideRequest>>? _rideRequestsSubscription;
+  Map<String, RideRequest> _passengerRequests = <String, RideRequest>{};
 
   @override
   void initState() {
     super.initState();
     _currentUser = FirebaseAuth.instance.currentUser;
+    _subscribeToRideRequests(_currentUser?.uid);
     _authSubscription = FirebaseAuth.instance.authStateChanges().listen((User? user) {
       if (!mounted) {
         return;
@@ -89,6 +94,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       setState(() {
         _currentUser = user;
       });
+      _subscribeToRideRequests(user?.uid);
     });
     unawaited(_fetchTrips(reset: true));
   }
@@ -96,6 +102,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
   @override
   void dispose() {
     _authSubscription?.cancel();
+    _rideRequestsSubscription?.cancel();
     super.dispose();
   }
 
@@ -178,7 +185,50 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
 
   Future<void> _onRefresh() => _fetchTrips(reset: true);
 
-  Future<void> _bookTrip(String tripId) async {
+  void _subscribeToRideRequests(String? passengerId) {
+    _rideRequestsSubscription?.cancel();
+
+    final String? trimmedId = passengerId?.trim();
+    if (trimmedId == null || trimmedId.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _passengerRequests = <String, RideRequest>{};
+        });
+      } else {
+        _passengerRequests = <String, RideRequest>{};
+      }
+      return;
+    }
+
+    _rideRequestsSubscription = _rideRequestService
+        .passengerRequestsStream(trimmedId)
+        .listen((List<RideRequest> requests) {
+      if (!mounted) {
+        return;
+      }
+
+      final Map<String, RideRequest> grouped = <String, RideRequest>{};
+      for (final RideRequest request in requests) {
+        grouped.putIfAbsent(request.rideId, () => request);
+      }
+
+      setState(() {
+        _passengerRequests = grouped;
+      });
+    }, onError: (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _passengerRequests = <String, RideRequest>{};
+      });
+    });
+  }
+
+  Future<void> _submitRideRequest({
+    required String tripId,
+    required String driverId,
+  }) async {
     final User? user = _currentUser ?? FirebaseAuth.instance.currentUser;
 
     if (user == null) {
@@ -198,63 +248,55 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       return;
     }
 
-    final String languageCode = Localizations.localeOf(context).languageCode;
+    if (driverId.trim().isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر تحديد السائق لهذه الرحلة.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
 
     setState(() {
       _bookingInProgress.add(tripId);
     });
 
     try {
-      await _bookingService.bookTrip(
-        tripId: tripId,
-        userId: user.uid,
-        languageCode: languageCode,
+      final RideRequest request = await _rideRequestService.createRideRequest(
+        rideId: tripId,
+        driverId: driverId,
+        passengerId: user.uid,
       );
 
       if (!mounted) {
         return;
       }
+
+      setState(() {
+        final Map<String, RideRequest> updated =
+            Map<String, RideRequest>.from(_passengerRequests);
+        updated[tripId] = request;
+        _passengerRequests = updated;
+      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('تم تأكيد حجزك بنجاح ✅'),
+          content: Text('تم إرسال طلبك للسائق… بانتظار الموافقة'),
         ),
       );
-    } on BookingException catch (error) {
+    } on FirebaseException catch (error) {
       if (!mounted) {
         return;
       }
-
-      if (error.code == 'driver-booking') {
-        final TextDirection direction = Directionality.of(context);
-        final bool isRtl = direction == TextDirection.rtl;
-
-        await showDialog<void>(
-          context: context,
-          builder: (BuildContext dialogContext) {
-            final String title = isRtl ? 'تنبيه' : 'Alert';
-
-            return Directionality(
-              textDirection: direction,
-              child: AlertDialog(
-                title: Text(title),
-                content: Text(error.message),
-                actions: <Widget>[
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    child: Text(isRtl ? 'حسناً' : 'OK'),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-        return;
-      }
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(error.message),
+          content: Text(error.message.isNotEmpty
+              ? error.message
+              : 'تعذر إرسال الطلب. حاول مرة أخرى لاحقًا.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -264,7 +306,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('تعذر إكمال الحجز. حاول مرة أخرى لاحقًا.'),
+          content: Text('تعذر إرسال الطلب. حاول مرة أخرى لاحقًا.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -498,7 +540,10 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                 onBook: canBook
                     ? () async {
                         Navigator.of(modalContext).pop();
-                        await _bookTrip(tripId);
+                        await _submitRideRequest(
+                          tripId: tripId,
+                          driverId: driverId,
+                        );
                       }
                     : null,
               );
@@ -1016,6 +1061,7 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                 : (data['notes'] ?? '').toString(),
             onTap: () => _showTripDetails(context, data, tripId),
             onBook: null,
+            hasPendingRequest: false,
           );
         } else {
           cardContent = StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -1029,12 +1075,23 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
               final _SeatAvailability availability = snapshotData != null
                   ? _extractSeatAvailability(snapshotData)
                   : initialAvailability;
+              final RideRequest? request = _passengerRequests[tripId];
+              final RideRequestStatus? requestStatus = request?.status;
+              final bool hasPendingRequest =
+                  requestStatus == RideRequestStatus.pending;
+              final bool isRequestAccepted =
+                  requestStatus == RideRequestStatus.accepted;
               final bool isBooked = _currentUser != null &&
-                  availability.bookedUsers.contains(_currentUser!.uid);
+                      availability.bookedUsers.contains(_currentUser!.uid) ||
+                  isRequestAccepted;
               final bool isSoldOut = availability.availableSeats <= 0;
               final bool requiresLogin = _currentUser == null;
               final bool canBook =
-                  !isDriver && !isBooked && !isSoldOut && !requiresLogin;
+                  !isDriver &&
+                  !isBooked &&
+                  !isSoldOut &&
+                  !requiresLogin &&
+                  !hasPendingRequest;
 
               return TripCard(
                 fromCity: fromCity.isEmpty ? 'غير متوفر' : fromCity,
@@ -1054,7 +1111,14 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
                     ? null
                     : (data['notes'] ?? '').toString(),
                 onTap: () => _showTripDetails(context, data, tripId),
-                onBook: canBook ? () => _bookTrip(tripId) : null,
+                onBook: canBook
+                    ? () => _submitRideRequest(
+                          tripId: tripId,
+                          driverId: driverId,
+                        )
+                    : null,
+                hasPendingRequest: hasPendingRequest,
+                pendingRequestMessage: 'تم إرسال طلبك للسائق… بانتظار الموافقة',
               );
             },
           );
@@ -1422,6 +1486,8 @@ class TripCard extends StatelessWidget {
     this.notes,
     this.onTap,
     this.onBook,
+    this.hasPendingRequest = false,
+    this.pendingRequestMessage,
   });
 
   final String fromCity;
@@ -1440,6 +1506,8 @@ class TripCard extends StatelessWidget {
   final String? notes;
   final VoidCallback? onTap;
   final VoidCallback? onBook;
+  final bool hasPendingRequest;
+  final String? pendingRequestMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -1685,6 +1753,14 @@ class TripCard extends StatelessWidget {
         color: Colors.orange.shade700,
         icon: Icons.directions_car_filled,
         text: 'هذه رحلتك',
+      );
+    }
+
+    if (hasPendingRequest) {
+      return _StatusBadge(
+        color: Colors.amber.shade700,
+        icon: Icons.hourglass_top,
+        text: pendingRequestMessage ?? 'تم إرسال طلبك للسائق… بانتظار الموافقة',
       );
     }
 

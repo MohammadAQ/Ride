@@ -3,7 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'package:ride/l10n/app_localizations.dart';
+import 'package:ride/models/ride_request.dart';
 import 'package:ride/services/booking_service.dart';
+import 'package:ride/services/ride_request_service.dart';
 
 class MyBookingsScreen extends StatelessWidget {
   const MyBookingsScreen({super.key, this.showAppBar = true});
@@ -140,6 +142,7 @@ class _BookingCard extends StatefulWidget {
 
 class _BookingCardState extends State<_BookingCard> {
   final BookingService _bookingService = BookingService();
+  final RideRequestService _rideRequestService = RideRequestService();
   bool _isCancelling = false;
 
   @override
@@ -230,198 +233,278 @@ class _BookingCardState extends State<_BookingCard> {
           statusColor = colorScheme.primary;
         }
 
-        return Directionality(
-          textDirection: direction,
-          child: Card(
-            elevation: 4,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
-            color: colorScheme.surface.withOpacity(0.96),
-            child: Padding(
-              padding: const EdgeInsetsDirectional.fromSTEB(20, 18, 20, 18),
-              child: Column(
-                crossAxisAlignment:
-                    isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    textDirection: direction,
+        final Stream<RideRequest?> requestStream =
+            _rideRequestService.requestForPassengerStream(
+          rideId: widget.tripId,
+          passengerId: widget.userId,
+        );
+
+        return StreamBuilder<RideRequest?>(
+          stream: requestStream,
+          builder: (
+            BuildContext context,
+            AsyncSnapshot<RideRequest?> requestSnapshot,
+          ) {
+            final RideRequest? request = requestSnapshot.data;
+            final Widget? statusChip = _buildRequestStatusChip(
+              context: context,
+              request: request,
+              isRtl: isRtl,
+            );
+
+            return Directionality(
+              textDirection: direction,
+              child: Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                color: colorScheme.surface.withOpacity(0.96),
+                child: Padding(
+                  padding:
+                      const EdgeInsetsDirectional.fromSTEB(20, 18, 20, 18),
+                  child: Column(
+                    crossAxisAlignment:
+                        isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      Icon(
-                        Icons.directions_car,
-                        color: colorScheme.primary,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          routeText,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.onSurface,
-                          ),
-                          textAlign: isRtl ? TextAlign.right : TextAlign.left,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment:
-                        isRtl ? MainAxisAlignment.end : MainAxisAlignment.start,
-                    textDirection: direction,
-                    children: <Widget>[
-                      Icon(
-                        Icons.event,
-                        color: colorScheme.onSurface.withOpacity(0.7),
-                        size: 18,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '$tripDate • $tripTime',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: colorScheme.onSurface.withOpacity(0.8),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    textDirection: direction,
-                    children: <Widget>[
-                      Icon(
-                        Icons.person,
-                        color: colorScheme.onSurface.withOpacity(0.7),
-                        size: 18,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          driverName.isEmpty ? 'السائق غير معروف' : driverName,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: colorScheme.onSurface.withOpacity(0.85),
-                            fontWeight: FontWeight.w600,
-                          ),
-                          textAlign: isRtl ? TextAlign.right : TextAlign.left,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    textDirection: direction,
-                    children: <Widget>[
-                      Icon(
-                        Icons.event_seat,
-                        color: colorScheme.primary,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          seatSummary,
-                          style: theme.textTheme.bodyMedium?.copyWith(
+                      if (statusChip != null) ...<Widget>[
+                        statusChip,
+                        const SizedBox(height: 12),
+                      ],
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        textDirection: direction,
+                        children: <Widget>[
+                          Icon(
+                            Icons.directions_car,
                             color: colorScheme.primary,
-                            fontWeight: FontWeight.bold,
                           ),
-                          textAlign: isRtl ? TextAlign.right : TextAlign.left,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    textDirection: direction,
-                    children: <Widget>[
-                      Icon(
-                        Icons.check_circle_outline,
-                        color: statusColor,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          (isRtl ? 'الحالة: ' : 'Status: ') + statusLabel,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: statusColor,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          textAlign: isRtl ? TextAlign.right : TextAlign.left,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    textDirection: direction,
-                    children: <Widget>[
-                      Icon(
-                        Icons.schedule,
-                        color: colorScheme.onSurface.withOpacity(0.6),
-                        size: 18,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          (isRtl ? 'تاريخ الحجز: ' : 'Booked at: ') + bookingDateText,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurface.withOpacity(0.7),
-                          ),
-                          textAlign: isRtl ? TextAlign.right : TextAlign.left,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (bookedCount > 0) ...<Widget>[
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Text(
-                        isRtl
-                            ? 'عدد الركاب المؤكدين: $bookedCount'
-                            : 'Confirmed passengers: $bookedCount',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurface.withOpacity(0.6),
-                        ),
-                      ),
-                    ),
-                  ],
-                  if (isConfirmed)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16),
-                      child: Align(
-                        alignment:
-                            isRtl ? Alignment.centerRight : Alignment.centerLeft,
-                        child: FilledButton.icon(
-                          onPressed: _isCancelling ? null : _cancelBooking,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Colors.red.shade600,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 12,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              routeText,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.onSurface,
+                              ),
+                              textAlign: isRtl ? TextAlign.right : TextAlign.left,
                             ),
                           ),
-                          icon: _isCancelling
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.cancel_outlined),
-                          label: Text(
-                            isRtl ? 'إلغاء الحجز' : 'Cancel Booking',
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment:
+                            isRtl ? MainAxisAlignment.end : MainAxisAlignment.start,
+                        textDirection: direction,
+                        children: <Widget>[
+                          Icon(
+                            Icons.event,
+                            color: colorScheme.onSurface.withOpacity(0.7),
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '$tripDate • $tripTime',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurface.withOpacity(0.8),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        textDirection: direction,
+                        children: <Widget>[
+                          Icon(
+                            Icons.person,
+                            color: colorScheme.onSurface.withOpacity(0.7),
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              driverName.isEmpty ? 'السائق غير معروف' : driverName,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurface.withOpacity(0.85),
+                                fontWeight: FontWeight.w600,
+                              ),
+                              textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        textDirection: direction,
+                        children: <Widget>[
+                          Icon(
+                            Icons.event_seat,
+                            color: colorScheme.primary,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              seatSummary,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        textDirection: direction,
+                        children: <Widget>[
+                          Icon(
+                            Icons.check_circle_outline,
+                            color: statusColor,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              (isRtl ? 'الحالة: ' : 'Status: ') + statusLabel,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: statusColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        textDirection: direction,
+                        children: <Widget>[
+                          Icon(
+                            Icons.schedule,
+                            color: colorScheme.onSurface.withOpacity(0.6),
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              (isRtl ? 'تاريخ الحجز: ' : 'Booked at: ') +
+                                  bookingDateText,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurface.withOpacity(0.7),
+                              ),
+                              textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (bookedCount > 0) ...<Widget>[
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment:
+                              isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                          child: Text(
+                            isRtl
+                                ? 'عدد الركاب المؤكدين: $bookedCount'
+                                : 'Confirmed passengers: $bookedCount',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurface.withOpacity(0.6),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                ],
+                      ],
+                      if (isConfirmed)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 16),
+                          child: Align(
+                            alignment:
+                                isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                            child: FilledButton.icon(
+                              onPressed: _isCancelling ? null : _cancelBooking,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Colors.red.shade600,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 12,
+                                ),
+                              ),
+                              icon: _isCancelling
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.cancel_outlined),
+                              label: Text(
+                                isRtl ? 'إلغاء الحجز' : 'Cancel Booking',
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
+    );
+  }
+
+  Widget? _buildRequestStatusChip({
+    required BuildContext context,
+    required RideRequest? request,
+    required bool isRtl,
+  }) {
+    if (request == null) {
+      return null;
+    }
+
+    final ThemeData theme = Theme.of(context);
+
+    late final String text;
+    late final Color color;
+
+    switch (request.status) {
+      case RideRequestStatus.pending:
+        text = 'بانتظار موافقة السائق…';
+        color = Colors.amber.shade700;
+        break;
+      case RideRequestStatus.accepted:
+        text = 'تمت الموافقة ✅';
+        color = Colors.green.shade600;
+        break;
+      case RideRequestStatus.rejected:
+        final String sanitizedReason = request.reason.trim().isEmpty
+            ? 'غير مذكور'
+            : request.reason.trim();
+        text = 'تم رفض الطلب ❌ – السبب: $sanitizedReason';
+        color = Colors.red.shade600;
+        break;
+    }
+
+    return Align(
+      alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Text(
+          text,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: color,
+            fontWeight: FontWeight.w600,
+          ),
+          textAlign: isRtl ? TextAlign.right : TextAlign.left,
+        ),
+      ),
     );
   }
 
