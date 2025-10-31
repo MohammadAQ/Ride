@@ -127,50 +127,71 @@ class RideRequestService {
     int? seatsRequested,
     String? rideId,
   }) async {
+    final String trimmedRequestId = requestId.trim();
+    if (trimmedRequestId.isEmpty) {
+      throw ArgumentError('requestId cannot be empty');
+    }
+
     final DocumentReference<Map<String, dynamic>> requestRef =
-        _collection.doc(requestId);
+        _collection.doc(trimmedRequestId);
+    final String? trimmedRideId = rideId?.trim();
 
-    await _firestore.runTransaction((Transaction transaction) async {
-      final DocumentSnapshot<Map<String, dynamic>> requestSnapshot =
-          await transaction.get(requestRef);
+    try {
+      await _firestore.runTransaction((Transaction transaction) async {
+        final DocumentSnapshot<Map<String, dynamic>> requestSnapshot =
+            await transaction.get(requestRef);
 
-      if (!requestSnapshot.exists) {
-        return;
-      }
+        if (!requestSnapshot.exists) {
+          return;
+        }
 
-      transaction.update(requestRef, <String, dynamic>{
-        'status': status,
-        'reason': reason,
-      });
+        transaction.update(requestRef, <String, dynamic>{
+          'status': status,
+          'reason': reason,
+        });
 
-      if (status != 'accepted' || rideId == null || rideId.trim().isEmpty) {
+        if (status != 'accepted' ||
+            trimmedRideId == null ||
+            trimmedRideId.isEmpty) {
+          // TODO: Trigger notification for the passenger when status changes.
+          return;
+        }
+
+        final Map<String, dynamic> requestData =
+            requestSnapshot.data() ?? <String, dynamic>{};
+        final int seats =
+            seatsRequested ?? _parseInt(requestData['seats_requested']);
+        final DocumentReference<Map<String, dynamic>> rideRef =
+            _firestore.collection('trips').doc(trimmedRideId);
+        final DocumentSnapshot<Map<String, dynamic>> rideSnapshot =
+            await transaction.get(rideRef);
+
+        if (!rideSnapshot.exists) {
+          return;
+        }
+
+        final Map<String, dynamic> rideData =
+            rideSnapshot.data() ?? <String, dynamic>{};
+        final int currentSeats = _parseInt(rideData['availableSeats']);
+        final int updatedSeats = math.max(0, currentSeats - seats);
+
+        transaction.update(rideRef, <String, dynamic>{
+          'availableSeats': updatedSeats,
+        });
+
         // TODO: Trigger notification for the passenger when status changes.
-        return;
-      }
-
-      final Map<String, dynamic> requestData =
-          requestSnapshot.data() ?? <String, dynamic>{};
-      final int seats = seatsRequested ?? _parseInt(requestData['seats_requested']);
-      final DocumentReference<Map<String, dynamic>> rideRef =
-          _firestore.collection('trips').doc(rideId);
-      final DocumentSnapshot<Map<String, dynamic>> rideSnapshot =
-          await transaction.get(rideRef);
-
-      if (!rideSnapshot.exists) {
-        return;
-      }
-
-      final Map<String, dynamic> rideData =
-          rideSnapshot.data() ?? <String, dynamic>{};
-      final int currentSeats = _parseInt(rideData['availableSeats']);
-      final int updatedSeats = math.max(0, currentSeats - seats);
-
-      transaction.update(rideRef, <String, dynamic>{
-        'availableSeats': updatedSeats,
       });
-
-      // TODO: Trigger notification for the passenger when status changes.
-    });
+    } on FirebaseException {
+      rethrow;
+    } catch (error, stackTrace) {
+      Error.throwWithStackTrace(
+        FirebaseException(
+          plugin: 'cloud_firestore',
+          message: 'Failed to update ride request status: $error',
+        ),
+        stackTrace,
+      );
+    }
   }
 
   int _parseInt(dynamic value) {
