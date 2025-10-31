@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:ride/l10n/app_localizations.dart';
+import 'package:ride/services/navigation_service.dart';
 
 import '../services/api_service.dart';
 import '../services/driver_trip_validation_service.dart';
@@ -241,7 +243,10 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
       ..remove('_isProcessing')
       ..remove('_isDeleting');
 
-    final updatedTrip = await Navigator.of(context).push<Map<String, dynamic>>(
+    final NavigatorState navigator =
+        NavigationService.myTripsNavKey.currentState ?? Navigator.of(context);
+
+    final updatedTrip = await navigator.push<Map<String, dynamic>>(
       MaterialPageRoute(
         builder: (context) => CreateTripScreen(
           initialTripData: sanitizedTrip,
@@ -533,7 +538,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Trips'),
+        title: Text(context.translate('nav_my_trips')),
         centerTitle: false,
       ),
       body: body,
@@ -1051,7 +1056,10 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
       return;
     }
 
-    Navigator.of(context).push(
+    final NavigatorState navigator =
+        NavigationService.myTripsNavKey.currentState ?? Navigator.of(context);
+
+    navigator.push(
       MaterialPageRoute<void>(
         builder: (BuildContext context) => RideDetailsScreen(arguments: arguments),
       ),
