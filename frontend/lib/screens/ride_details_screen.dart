@@ -112,13 +112,17 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
     }
 
     try {
-      await _rideRequestService.updateRequestStatus(
-        requestId: requestId,
-        status: 'accepted',
+      await _rideRequestService.acceptRideRequest(
         rideId: widget.arguments.tripId,
-        seatsRequested: request.seatsRequested,
+        requestId: requestId,
       );
       _showSnack('تم تحديث الطلب بنجاح ✅');
+    } on RideRequestException catch (error) {
+      if (error.code == 'not_enough_seats') {
+        _showSnack('لا توجد مقاعد كافية', error: true);
+      } else {
+        _showSnack('تعذر تحديث الطلب، حاول مرة أخرى لاحقاً', error: true);
+      }
     } on FirebaseException catch (_) {
       _showSnack('تعذر تحديث الطلب، حاول مرة أخرى لاحقاً', error: true);
     } catch (_) {
@@ -139,12 +143,9 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
     }
 
     try {
-      await _rideRequestService.updateRequestStatus(
+      await _rideRequestService.rejectRideRequest(
         requestId: requestId,
-        status: 'rejected',
         reason: reason,
-        rideId: widget.arguments.tripId,
-        seatsRequested: request.seatsRequested,
       );
       _showSnack('تم تحديث الطلب بنجاح ✅');
     } on FirebaseException catch (_) {

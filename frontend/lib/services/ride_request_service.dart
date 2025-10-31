@@ -1,8 +1,16 @@
-import 'dart:math' as math;
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:ride/models/ride_request.dart';
+
+class RideRequestException implements Exception {
+  RideRequestException(this.code, this.message);
+
+  final String code;
+  final String message;
+
+  @override
+  String toString() => 'RideRequestException(code: $code, message: $message)';
+}
 
 class RideRequestService {
   RideRequestService({FirebaseFirestore? firestore})
@@ -87,7 +95,7 @@ class RideRequestService {
         .orderBy('created_at', descending: true)
         .limit(1)
         .snapshots()
-        .map((snapshot) {
+        .map((QuerySnapshot<Map<String, dynamic>> snapshot) {
       if (snapshot.docs.isEmpty) {
         return null;
       }
@@ -120,78 +128,129 @@ class RideRequestService {
     );
   }
 
-  Future<void> updateRequestStatus({
+  Future<void> cancelPendingRequest({
+    required String rideId,
+    required String passengerId,
+  }) async {
+    final QuerySnapshot<Map<String, dynamic>> querySnapshot = await _collection
+        .where('ride_id', isEqualTo: rideId.trim())
+        .where('passenger_id', isEqualTo: passengerId.trim())
+        .where('status', isEqualTo: 'pending')
+        .limit(1)
+        .get();
+
+    if (querySnapshot.docs.isEmpty) {
+      return;
+    }
+
+    final QueryDocumentSnapshot<Map<String, dynamic>> doc =
+        querySnapshot.docs.first;
+    await _collection.doc(doc.id).update(<String, dynamic>{
+      'status': 'canceled_by_passenger',
+      'reason': 'Canceled by passenger',
+    });
+  }
+
+  Future<void> rejectRideRequest({
     required String requestId,
-    required String status,
-    String reason = '',
-    int? seatsRequested,
-    String? rideId,
+    required String reason,
   }) async {
     final String trimmedRequestId = requestId.trim();
     if (trimmedRequestId.isEmpty) {
-      throw ArgumentError('requestId cannot be empty');
+      throw RideRequestException('invalid-request', 'requestId cannot be empty');
+    }
+
+    await _collection.doc(trimmedRequestId).update(<String, dynamic>{
+      'status': 'rejected',
+      'reason': reason.trim(),
+    });
+  }
+
+  Future<void> acceptRideRequest({
+    required String rideId,
+    required String requestId,
+  }) async {
+    final String trimmedRideId = rideId.trim();
+    final String trimmedRequestId = requestId.trim();
+
+    if (trimmedRideId.isEmpty) {
+      throw RideRequestException('invalid-ride', 'rideId cannot be empty');
+    }
+    if (trimmedRequestId.isEmpty) {
+      throw RideRequestException('invalid-request', 'requestId cannot be empty');
     }
 
     final DocumentReference<Map<String, dynamic>> requestRef =
         _collection.doc(trimmedRequestId);
-    final String? trimmedRideId = rideId?.trim();
 
-    try {
-      await _firestore.runTransaction((Transaction transaction) async {
-        final DocumentSnapshot<Map<String, dynamic>> requestSnapshot =
-            await transaction.get(requestRef);
+    await _firestore.runTransaction((Transaction transaction) async {
+      final DocumentSnapshot<Map<String, dynamic>> requestSnapshot =
+          await transaction.get(requestRef);
 
-        if (!requestSnapshot.exists) {
-          return;
-        }
+      if (!requestSnapshot.exists) {
+        throw RideRequestException(
+          'request-not-found',
+          'Ride request not found',
+        );
+      }
 
-        transaction.update(requestRef, <String, dynamic>{
-          'status': status,
-          'reason': reason,
-        });
+      final Map<String, dynamic> requestData =
+          requestSnapshot.data() ?? <String, dynamic>{};
+      final String status =
+          (requestData['status'] ?? 'pending').toString().toLowerCase();
 
-        if (status != 'accepted' ||
-            trimmedRideId == null ||
-            trimmedRideId.isEmpty) {
-          // TODO: Trigger notification for the passenger when status changes.
-          return;
-        }
+      if (status != 'pending') {
+        throw RideRequestException(
+          'request-not-pending',
+          'Request is not pending',
+        );
+      }
 
-        final Map<String, dynamic> requestData =
-            requestSnapshot.data() ?? <String, dynamic>{};
-        final int seats =
-            seatsRequested ?? _parseInt(requestData['seats_requested']);
-        final DocumentReference<Map<String, dynamic>> rideRef =
+      final int seatsRequested = _parseInt(requestData['seats_requested']);
+
+      DocumentReference<Map<String, dynamic>> rideRef =
+          _firestore.collection('rides').doc(trimmedRideId);
+      DocumentSnapshot<Map<String, dynamic>> rideSnapshot =
+          await transaction.get(rideRef);
+
+      if (!rideSnapshot.exists) {
+        final DocumentReference<Map<String, dynamic>> fallbackRef =
             _firestore.collection('trips').doc(trimmedRideId);
-        final DocumentSnapshot<Map<String, dynamic>> rideSnapshot =
-            await transaction.get(rideRef);
-
-        if (!rideSnapshot.exists) {
-          return;
+        final DocumentSnapshot<Map<String, dynamic>> fallbackSnapshot =
+            await transaction.get(fallbackRef);
+        if (!fallbackSnapshot.exists) {
+          throw RideRequestException(
+            'ride-not-found',
+            'Ride not found',
+          );
         }
+        rideRef = fallbackRef;
+        rideSnapshot = fallbackSnapshot;
+      }
 
-        final Map<String, dynamic> rideData =
-            rideSnapshot.data() ?? <String, dynamic>{};
-        final int currentSeats = _parseInt(rideData['availableSeats']);
-        final int updatedSeats = math.max(0, currentSeats - seats);
+      final Map<String, dynamic> rideData =
+          rideSnapshot.data() ?? <String, dynamic>{};
+      final int seatsAvailable =
+          _parseInt(rideData['available_seats'] ?? rideData['availableSeats']);
 
-        transaction.update(rideRef, <String, dynamic>{
-          'availableSeats': updatedSeats,
-        });
+      if (seatsAvailable < seatsRequested) {
+        throw RideRequestException(
+          'not_enough_seats',
+          'Not enough seats available',
+        );
+      }
 
-        // TODO: Trigger notification for the passenger when status changes.
+      transaction.update(requestRef, <String, dynamic>{
+        'status': 'accepted',
+        'reason': '',
       });
-    } on FirebaseException {
-      rethrow;
-    } catch (error, stackTrace) {
-      Error.throwWithStackTrace(
-        FirebaseException(
-          plugin: 'cloud_firestore',
-          message: 'Failed to update ride request status: $error',
-        ),
-        stackTrace,
-      );
-    }
+
+      final int updatedSeats = seatsAvailable - seatsRequested;
+      transaction.update(rideRef, <String, dynamic>{
+        'available_seats': updatedSeats,
+        'availableSeats': updatedSeats,
+      });
+    });
   }
 
   int _parseInt(dynamic value) {
@@ -202,7 +261,10 @@ class RideRequestService {
       return value.toInt();
     }
     if (value is String) {
-      return int.tryParse(value) ?? 0;
+      final int? parsed = int.tryParse(value);
+      if (parsed != null) {
+        return parsed;
+      }
     }
     return 0;
   }
