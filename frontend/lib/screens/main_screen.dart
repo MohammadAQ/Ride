@@ -9,6 +9,7 @@ import 'package:ride/screens/my_bookings_screen.dart';
 import 'package:ride/screens/my_trips_screen.dart';
 import 'package:ride/screens/profile_screen.dart';
 import 'package:ride/screens/search_trips_screen.dart';
+import 'package:ride/services/navigation_service.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -22,30 +23,35 @@ class _MainScreenState extends State<MainScreen> {
   late final Stream<int> _pendingRequestsCountStream;
 
   static final List<_Destination> _destinations = <_Destination>[
-    const _Destination(
+    _Destination(
       titleKey: 'nav_search_trips',
       icon: Icons.search,
-      page: const SearchTripsScreen(showAppBar: false),
+      navigatorKey: NavigationService.searchTripsNavKey,
+      pageBuilder: () => const SearchTripsScreen(showAppBar: true),
     ),
-    const _Destination(
+    _Destination(
       titleKey: 'nav_my_trips',
       icon: Icons.directions_car_filled,
-      page: const MyTripsScreen(showAppBar: false),
+      navigatorKey: NavigationService.myTripsNavKey,
+      pageBuilder: () => const MyTripsScreen(showAppBar: true),
     ),
-    const _Destination(
+    _Destination(
       titleKey: 'nav_create_trip',
       icon: Icons.add_circle_outline,
-      page: const CreateTripScreen(showAppBar: false),
+      navigatorKey: NavigationService.createTripNavKey,
+      pageBuilder: () => const CreateTripScreen(showAppBar: true),
     ),
-    const _Destination(
+    _Destination(
       titleKey: 'nav_my_bookings',
       icon: Icons.event_seat,
-      page: const MyBookingsScreen(showAppBar: false),
+      navigatorKey: NavigationService.myBookingsNavKey,
+      pageBuilder: () => const MyBookingsScreen(showAppBar: true),
     ),
-    const _Destination(
+    _Destination(
       titleKey: 'nav_profile',
       icon: Icons.person,
-      page: const ProfileScreen(showAppBar: false),
+      navigatorKey: NavigationService.profileNavKey,
+      pageBuilder: () => const ProfileScreen(showAppBar: true),
     ),
   ];
 
@@ -56,6 +62,13 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _onItemTapped(int index) {
+    if (index == _selectedIndex) {
+      final NavigatorState? currentNavigator =
+          _destinations[index].navigatorKey.currentState;
+      currentNavigator?.popUntil((Route<dynamic> route) => route.isFirst);
+      return;
+    }
+
     setState(() {
       _selectedIndex = index;
     });
@@ -126,29 +139,47 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final _Destination currentDestination = _destinations[_selectedIndex];
+    return WillPopScope(
+      onWillPop: () async {
+        final NavigatorState? currentNavigator =
+            _destinations[_selectedIndex].navigatorKey.currentState;
+        if (currentNavigator == null) {
+          return true;
+        }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(context.translate(currentDestination.titleKey)),
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
-      ),
-      body: currentDestination.page,
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        selectedItemColor: Colors.deepPurple,
-        unselectedItemColor: Colors.grey,
-        items: _destinations
-            .map(
-              (destination) => BottomNavigationBarItem(
-                icon: _buildNavIcon(destination),
-                label: context.translate(destination.titleKey),
-              ),
-            )
-            .toList(),
+        final bool isFirstRoute = !await currentNavigator.maybePop();
+        if (isFirstRoute) {
+          if (_selectedIndex != 0) {
+            setState(() {
+              _selectedIndex = 0;
+            });
+            return false;
+          }
+        }
+
+        return isFirstRoute;
+      },
+      child: Scaffold(
+        body: IndexedStack(
+          index: _selectedIndex,
+          children:
+              _destinations.map((destination) => _buildNavigator(destination)).toList(),
+        ),
+        bottomNavigationBar: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
+          currentIndex: _selectedIndex,
+          onTap: _onItemTapped,
+          selectedItemColor: Colors.deepPurple,
+          unselectedItemColor: Colors.grey,
+          items: _destinations
+              .map(
+                (destination) => BottomNavigationBarItem(
+                  icon: _buildNavIcon(destination),
+                  label: context.translate(destination.titleKey),
+                ),
+              )
+              .toList(),
+        ),
       ),
     );
   }
@@ -157,11 +188,25 @@ class _MainScreenState extends State<MainScreen> {
 class _Destination {
   const _Destination({
     required this.titleKey,
-    required this.page,
     required this.icon,
+    required this.navigatorKey,
+    required this.pageBuilder,
   });
 
   final String titleKey;
-  final Widget page;
   final IconData icon;
+  final GlobalKey<NavigatorState> navigatorKey;
+  final Widget Function() pageBuilder;
+}
+
+Widget _buildNavigator(_Destination destination) {
+  return Navigator(
+    key: destination.navigatorKey,
+    onGenerateRoute: (RouteSettings settings) {
+      return MaterialPageRoute<void>(
+        builder: (BuildContext context) => destination.pageBuilder(),
+        settings: settings,
+      );
+    },
+  );
 }
