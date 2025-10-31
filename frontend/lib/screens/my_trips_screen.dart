@@ -1,8 +1,14 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:ride/models/ride_request.dart';
+import 'package:ride/models/user_profile.dart';
+import 'package:ride/services/ride_request_service.dart';
+import 'package:ride/services/user_profile_cache.dart';
 
 import '../services/api_service.dart';
 import '../services/driver_trip_validation_service.dart';
@@ -22,6 +28,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
   final ApiService _apiService = ApiService();
   final DriverTripValidationService _tripValidationService =
       DriverTripValidationService();
+  final RideRequestService _rideRequestService = RideRequestService();
   final List<Map<String, dynamic>> _trips = <Map<String, dynamic>>[];
   String? _nextCursor;
   bool _isLoading = false;
@@ -677,20 +684,32 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
           createdAt: createdAt,
         );
 
-        Widget card = MyTripCard(
-          fromCity: fromCity,
-          toCity: toCity,
-          tripDate: dateText,
-          tripTime: timeText,
-          driverName: driverName,
-          availableSeats: availableSeats,
-          price: priceText,
-          carModel: carModel,
-          carColor: carColor,
-          createdAt: createdAt,
-          textDirection: textDirection,
-          onLongPress: isProcessing ? null : () => _showTripOptions(data),
-          onTap: () => _handleViewTripDetails(dashboardArgs),
+        Widget card = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            MyTripCard(
+              fromCity: fromCity,
+              toCity: toCity,
+              tripDate: dateText,
+              tripTime: timeText,
+              driverName: driverName,
+              availableSeats: availableSeats,
+              price: priceText,
+              carModel: carModel,
+              carColor: carColor,
+              createdAt: createdAt,
+              textDirection: textDirection,
+              onLongPress: isProcessing ? null : () => _showTripOptions(data),
+              onTap: () => _handleViewTripDetails(dashboardArgs),
+            ),
+            _PendingRequestsSection(
+              rideId: tripId,
+              driverId: driverId,
+              textDirection: textDirection,
+              rideRequestService: _rideRequestService,
+            ),
+          ],
         );
 
         if (isProcessing) {
@@ -1328,6 +1347,372 @@ class _InfoRow extends StatelessWidget {
         const SizedBox(width: 6),
         Expanded(child: child),
       ],
+    );
+  }
+}
+
+class _PendingRequestsSection extends StatelessWidget {
+  const _PendingRequestsSection({
+    required this.rideId,
+    required this.driverId,
+    required this.textDirection,
+    required this.rideRequestService,
+  });
+
+  final String rideId;
+  final String driverId;
+  final TextDirection textDirection;
+  final RideRequestService rideRequestService;
+
+  @override
+  Widget build(BuildContext context) {
+    final String trimmedRideId = rideId.trim();
+    final String trimmedDriverId = driverId.trim();
+    if (trimmedRideId.isEmpty || trimmedDriverId.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return StreamBuilder<List<RideRequest>>(
+      stream: rideRequestService.pendingRequestsForRideStream(
+        driverId: trimmedDriverId,
+        rideId: trimmedRideId,
+      ),
+      builder: (
+        BuildContext context,
+        AsyncSnapshot<List<RideRequest>> snapshot,
+      ) {
+        if (snapshot.hasError) {
+          return const SizedBox.shrink();
+        }
+
+        final List<RideRequest> requests = snapshot.data ?? <RideRequest>[];
+        if (requests.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final ThemeData theme = Theme.of(context);
+        final ColorScheme colorScheme = theme.colorScheme;
+        final bool isRtl = textDirection == TextDirection.rtl;
+
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsetsDirectional.only(top: 12),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 14, 16, 14),
+          decoration: BoxDecoration(
+            color: colorScheme.secondaryContainer.withOpacity(0.35),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: colorScheme.secondary.withOpacity(0.4),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment:
+                isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (int index = 0; index < requests.length; index++) ...<Widget>[
+                _PendingRequestTile(
+                  request: requests[index],
+                  rideId: trimmedRideId,
+                  textDirection: textDirection,
+                  rideRequestService: rideRequestService,
+                ),
+                if (index < requests.length - 1) const SizedBox(height: 12),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+enum _ProcessingAction { none, accept, reject }
+
+class _PendingRequestTile extends StatefulWidget {
+  const _PendingRequestTile({
+    required this.request,
+    required this.rideId,
+    required this.textDirection,
+    required this.rideRequestService,
+  });
+
+  final RideRequest request;
+  final String rideId;
+  final TextDirection textDirection;
+  final RideRequestService rideRequestService;
+
+  @override
+  State<_PendingRequestTile> createState() => _PendingRequestTileState();
+}
+
+class _PendingRequestTileState extends State<_PendingRequestTile> {
+  UserProfile? _profile;
+  _ProcessingAction _processingAction = _ProcessingAction.none;
+
+  @override
+  void initState() {
+    super.initState();
+    final String passengerId = widget.request.passengerId.trim();
+    if (passengerId.isEmpty) {
+      return;
+    }
+    final UserProfile? cached = UserProfileCache.get(passengerId);
+    if (cached != null || UserProfileCache.hasEntry(passengerId)) {
+      _profile = cached;
+    } else {
+      _loadProfile(passengerId);
+    }
+  }
+
+  Future<void> _loadProfile(String passengerId) async {
+    final UserProfile? profile = await UserProfileCache.fetch(passengerId);
+    if (!mounted) {
+      return;
+    }
+    if (profile != null) {
+      setState(() {
+        _profile = profile;
+      });
+    }
+  }
+
+  bool get _isProcessing => _processingAction != _ProcessingAction.none;
+
+  String _resolvePassengerName() {
+    final UserProfile? profile = _profile;
+    if (profile != null) {
+      final String sanitized =
+          UserProfile.sanitizeDisplayName(profile.displayName);
+      if (sanitized.isNotEmpty && sanitized != 'مستخدم') {
+        return sanitized;
+      }
+    }
+    return '';
+  }
+
+  String? _resolvePhone() {
+    final String? phone = _profile?.phone;
+    if (phone == null) {
+      return null;
+    }
+    final String trimmed = phone.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    final bool isRtl = widget.textDirection == TextDirection.rtl;
+
+    String label = _resolvePassengerName();
+    final String? phone = _resolvePhone();
+    if (label.isEmpty && phone != null) {
+      label = phone;
+    }
+    if (label.isEmpty) {
+      label = widget.request.passengerId;
+    }
+    final String phoneSuffix =
+        phone != null && phone.isNotEmpty && phone != label ? ' ($phone)' : '';
+    final String headerText = '🔔 طلب جديد من: $label$phoneSuffix';
+
+    return Directionality(
+      textDirection: widget.textDirection,
+      child: Column(
+        crossAxisAlignment:
+            isRtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            headerText,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
+            ),
+            textAlign: isRtl ? TextAlign.right : TextAlign.left,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'المقاعد المطلوبة: ${widget.request.seatsRequested}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurface.withOpacity(0.7),
+            ),
+            textAlign: isRtl ? TextAlign.right : TextAlign.left,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            textDirection: widget.textDirection,
+            children: <Widget>[
+              FilledButton(
+                onPressed: _isProcessing ? null : _acceptRequest,
+                child: _processingAction == _ProcessingAction.accept
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('موافقة'),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: _isProcessing ? null : _rejectRequest,
+                child: _processingAction == _ProcessingAction.reject
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('رفض'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _acceptRequest() async {
+    if (_isProcessing) {
+      return;
+    }
+
+    setState(() {
+      _processingAction = _ProcessingAction.accept;
+    });
+
+    try {
+      await widget.rideRequestService.updateRequestStatus(
+        requestId: widget.request.id,
+        status: 'accepted',
+        rideId: widget.rideId,
+        seatsRequested: widget.request.seatsRequested,
+      );
+      if (!mounted) {
+        return;
+      }
+      _showSnack('تمت الموافقة على الطلب');
+    } on FirebaseException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showSnack(
+        error.message?.isNotEmpty == true
+            ? error.message!
+            : 'تعذر تحديث الطلب. حاول مرة أخرى لاحقًا.',
+        error: true,
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      _showSnack('تعذر تحديث الطلب. حاول مرة أخرى لاحقًا.', error: true);
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _processingAction = _ProcessingAction.none;
+      });
+    }
+  }
+
+  Future<void> _rejectRequest() async {
+    if (_isProcessing) {
+      return;
+    }
+
+    final String? reason = await _promptRejectionReason();
+    if (reason == null) {
+      return;
+    }
+
+    setState(() {
+      _processingAction = _ProcessingAction.reject;
+    });
+
+    try {
+      await widget.rideRequestService.updateRequestStatus(
+        requestId: widget.request.id,
+        status: 'rejected',
+        reason: reason,
+        rideId: widget.rideId,
+        seatsRequested: widget.request.seatsRequested,
+      );
+      if (!mounted) {
+        return;
+      }
+      _showSnack('تم رفض الطلب');
+    } on FirebaseException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showSnack(
+        error.message?.isNotEmpty == true
+            ? error.message!
+            : 'تعذر تحديث الطلب. حاول مرة أخرى لاحقًا.',
+        error: true,
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      _showSnack('تعذر تحديث الطلب. حاول مرة أخرى لاحقًا.', error: true);
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _processingAction = _ProcessingAction.none;
+      });
+    }
+  }
+
+  Future<String?> _promptRejectionReason() async {
+    final TextEditingController controller = TextEditingController();
+
+    final String? result = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return Directionality(
+          textDirection: widget.textDirection,
+          child: AlertDialog(
+            title: const Text('سبب الرفض'),
+            content: TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                hintText: 'اكتب سبب الرفض…',
+              ),
+              maxLines: 3,
+              textDirection: widget.textDirection,
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext)
+                    .pop(controller.text.trim()),
+                child: const Text('إرسال'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    return result;
+  }
+
+  void _showSnack(String message, {bool error = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: error ? Colors.red.shade600 : null,
+      ),
     );
   }
 }
