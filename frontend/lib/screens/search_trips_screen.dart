@@ -292,11 +292,14 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
       if (!mounted) {
         return;
       }
+      final String errorMessage =
+          (error.message?.isNotEmpty ?? false)
+              ? error.message!
+              : 'تعذر إرسال الطلب. حاول مرة أخرى لاحقًا.';
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(error.message.isNotEmpty
-              ? error.message
-              : 'تعذر إرسال الطلب. حاول مرة أخرى لاحقًا.'),
+          content: Text(errorMessage),
           backgroundColor: Colors.redAccent,
         ),
       );
